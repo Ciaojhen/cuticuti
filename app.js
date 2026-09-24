@@ -68,7 +68,26 @@ function toast(msg) {
   toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
 }
 
-/* ============ 資料庫 (IndexedDB，存在手機本機) ============ */
+/* ============ 資料：本機優先 + Supabase 雲端同步 ============
+ * 所有修改先存進手機（IndexedDB），再在背景上傳到 Supabase。
+ * 沒網路時也能新增、修改，連上網路後會自動把「待上傳」的變更送出。
+ * 雲端：資料表 cuti_trips（每趟旅程一列）、照片空間 trip-photos/{user id}/{photo id}.jpg */
+const CFG = window.CUTI_CONFIG || {};
+const configured = Boolean(CFG.SUPABASE_URL && CFG.SUPABASE_KEY);
+const sb = configured
+  ? supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_KEY, {
+      // 和 FooooooD 在同一個網域，登入狀態用不同名稱存，兩個 App 才不會互相登出
+      auth: { flowType: 'pkce', persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, storageKey: 'cuticuti-auth' },
+    })
+  : null;
+const BUCKET = 'trip-photos';
+
+const store = {
+  get(k) { try { return localStorage.getItem('cuticuti-' + k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem('cuticuti-' + k, v); } catch { /* 無痕模式等 */ } },
+};
+
+// 本機快取
 const DB = {
   db: null,
   open() {
@@ -82,35 +101,211 @@ const DB = {
       r.onerror = () => rej(r.error);
     });
   },
-  run(store, mode, fn) {
+  run(names, mode, fn) {
     return new Promise((res, rej) => {
-      const tx = this.db.transaction(store, mode);
-      const req = fn(tx.objectStore(store));
+      const tx = this.db.transaction(names, mode);
+      const req = fn(tx);
       tx.oncomplete = () => res(req && req.result);
       tx.onerror = () => rej(tx.error);
     });
   },
-  all: (s) => DB.run(s, 'readonly', (o) => o.getAll()),
-  get: (s, id) => DB.run(s, 'readonly', (o) => o.get(id)),
-  put: (s, v) => DB.run(s, 'readwrite', (o) => o.put(v)),
-  del: (s, id) => DB.run(s, 'readwrite', (o) => o.delete(id)),
+  all: (s) => DB.run(s, 'readonly', (tx) => tx.objectStore(s).getAll()),
+  keys: (s) => DB.run(s, 'readonly', (tx) => tx.objectStore(s).getAllKeys()),
+  get: (s, id) => DB.run(s, 'readonly', (tx) => tx.objectStore(s).get(id)),
+  put: (s, v) => DB.run(s, 'readwrite', (tx) => tx.objectStore(s).put(v)),
+  del: (s, id) => DB.run(s, 'readwrite', (tx) => tx.objectStore(s).delete(id)),
+  replaceTrips: (list) => DB.run('trips', 'readwrite', (tx) => {
+    const o = tx.objectStore('trips');
+    o.clear();
+    list.forEach((t) => o.put(t));
+  }),
+  clear: () => DB.run(['trips', 'photos'], 'readwrite', (tx) => {
+    tx.objectStore('trips').clear();
+    tx.objectStore('photos').clear();
+  }),
 };
 
+// 還沒上傳到雲端的變更
+const pending = {
+  empty: () => ({ trips: [], delTrips: [], photos: [], delPhotos: [] }),
+  load() { try { return { ...pending.empty(), ...JSON.parse(store.get('pending')) }; } catch { return pending.empty(); } },
+  save(p) { store.set('pending', JSON.stringify(p)); },
+  add(kind, id) { const p = pending.load(); if (!p[kind].includes(id)) p[kind].push(id); pending.save(p); },
+  drop(kind, ids) { const p = pending.load(); p[kind] = p[kind].filter((x) => !ids.includes(x)); pending.save(p); },
+  count() { const p = pending.load(); return p.trips.length + p.delTrips.length + p.photos.length + p.delPhotos.length; },
+  clear() { pending.save(pending.empty()); },
+};
+
+const cloud = {
+  path: (id) => `${user.id}/${id}.jpg`,
+  async listTrips() {
+    const { data, error } = await sb.from('cuti_trips').select('data');
+    if (error) throw error;
+    return data.map((r) => r.data);
+  },
+  async saveTrip(t) {
+    const { error } = await sb.from('cuti_trips').upsert({ user_id: user.id, id: t.id, data: t, updated_at: new Date(t.updatedAt || Date.now()).toISOString() });
+    if (error) throw error;
+  },
+  async deleteTrip(id) {
+    const { error } = await sb.from('cuti_trips').delete().eq('user_id', user.id).eq('id', id);
+    if (error) throw error;
+  },
+  async uploadPhoto(id, blob) {
+    const { error } = await sb.storage.from(BUCKET).upload(cloud.path(id), blob, { contentType: 'image/jpeg', cacheControl: '31536000', upsert: true });
+    if (error) throw error;
+  },
+  async downloadPhoto(id) {
+    const { data, error } = await sb.storage.from(BUCKET).download(cloud.path(id));
+    if (error) throw error;
+    return data;
+  },
+  async removePhotos(ids) {
+    if (!ids.length) return;
+    const { error } = await sb.storage.from(BUCKET).remove(ids.map(cloud.path));
+    if (error) throw error;
+  },
+};
+
+let user = null;
 let trips = [];
 let current = null; // 目前開啟的旅程
 let ui = { tab: 'plan', day: null };
-const photoURLs = new Map();
+const photoURLs = new Map(); // photoId -> objectURL
+
+function friendly(err) {
+  const msg = err?.message || String(err);
+  if (!navigator.onLine || /fetch|Load failed|network/i.test(msg)) return '沒有網路';
+  return msg;
+}
+const isEditing = () => $('#sheet').classList.contains('open');
 
 async function saveTrip(t) {
   t.updatedAt = Date.now();
-  if (!trips.includes(t)) trips.push(t);
+  const i = trips.findIndex((x) => x.id === t.id);
+  if (i >= 0) trips[i] = t; else trips.push(t);
   await DB.put('trips', t);
+  pending.add('trips', t.id);
+  scheduleSync();
+}
+async function deleteTripData(t) {
+  const photoIds = tripPhotoIds(t);
+  for (const id of photoIds) { await DB.del('photos', id); forgetPhoto(id); pending.add('delPhotos', id); }
+  pending.drop('photos', photoIds);
+  await DB.del('trips', t.id);
+  pending.drop('trips', [t.id]);
+  pending.add('delTrips', t.id);
+  trips = trips.filter((x) => x.id !== t.id);
+  scheduleSync();
+}
+function tripPhotoIds(t) {
+  return Object.values(t.journal || {}).flatMap((j) => j.photos || []);
+}
+async function savePhoto(id, tripId, blob) {
+  await DB.put('photos', { id, tripId, blob });
+  pending.add('photos', id);
+  scheduleSync();
+}
+function forgetPhoto(id) {
+  if (photoURLs.has(id)) { URL.revokeObjectURL(photoURLs.get(id)); photoURLs.delete(id); }
+}
+async function deletePhoto(id) {
+  await DB.del('photos', id);
+  forgetPhoto(id);
+  pending.drop('photos', [id]);
+  pending.add('delPhotos', id);
+  scheduleSync();
+}
+async function photoBlob(id) {
+  const p = await DB.get('photos', id);
+  if (p) return p.blob;
+  const blob = await cloud.downloadPhoto(id); // 其他裝置拍的照片，第一次看時下載並存到本機
+  await DB.put('photos', { id, blob });
+  return blob;
+}
+async function photoURL(id) {
+  if (photoURLs.has(id)) return photoURLs.get(id);
+  try {
+    const u = URL.createObjectURL(await photoBlob(id));
+    photoURLs.set(id, u);
+    return u;
+  } catch { return null; } // 離線且這支手機還沒下載過這張照片
+}
+
+// ---- 同步 ----
+let syncing = null;
+let syncTimer = null;
+let lastSync = 0;
+function sync() {
+  if (!syncing) syncing = doSync().finally(() => { syncing = null; });
+  return syncing;
+}
+function scheduleSync(delay = 800) {
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => {
+    sync().then((changed) => { if (changed && !isEditing()) route(); }).catch(() => {});
+  }, delay);
+}
+async function doSync() {
+  if (!user || user.offline) throw new Error('尚未連線');
+  // 1. 先把這支手機上的變更送上去
+  const p = pending.load();
+  for (const id of p.photos) {
+    const ph = await DB.get('photos', id);
+    if (ph) await cloud.uploadPhoto(id, ph.blob);
+  }
+  pending.drop('photos', p.photos);
+  await cloud.removePhotos(p.delPhotos);
+  pending.drop('delPhotos', p.delPhotos);
+  for (const id of p.trips) {
+    const t = trips.find((x) => x.id === id) || (await DB.get('trips', id));
+    if (t) await cloud.saveTrip(t);
+  }
+  pending.drop('trips', p.trips);
+  for (const id of p.delTrips) await cloud.deleteTrip(id);
+  pending.drop('delTrips', p.delTrips);
+
+  // 2. 再抓雲端最新資料（同步途中又有新修改的，保留手機上的版本）
+  const remote = await cloud.listTrips();
+  const still = pending.load();
+  const map = new Map(remote.map((t) => [t.id, t]));
+  trips.filter((t) => still.trips.includes(t.id)).forEach((t) => map.set(t.id, t));
+  still.delTrips.forEach((id) => map.delete(id));
+  const merged = [...map.values()];
+  const key = (list) => JSON.stringify([...list].sort((a, b) => a.id.localeCompare(b.id)));
+  const changed = key(merged) !== key(trips);
+  if (changed) {
+    await DB.replaceTrips(merged);
+    trips = merged;
+  }
+  lastSync = Date.now();
+  return changed;
 }
 
 /* ============ 畫面 ============ */
 const app = $('#app');
 
+function renderLogin() {
+  document.title = 'CutiCuti';
+  app.innerHTML = `
+    <main class="login">
+      <img src="icons/icon-192.png" alt="" class="login-icon">
+      <h1>CutiCuti</h1>
+      <p>記錄與安排你的每一趟旅行</p>
+      <button class="google-btn" data-act="login">
+        <svg viewBox="0 0 48 48" width="20" height="20" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>
+        使用 Google 帳號登入
+      </button>
+      <p class="hint">登入後，行程、日記和照片會存在你的 Google 帳號底下，換手機或用電腦開都看得到。</p>
+    </main>`;
+}
+
+function renderLoading(msg = '載入中…') {
+  app.innerHTML = `<div class="empty"><div class="big">🧳</div>${msg}</div>`;
+}
+
 function route() {
+  if (!user) return renderLogin();
   const m = location.hash.match(/^#\/trip\/([\w-]+)/);
   current = m ? trips.find((t) => t.id === m[1]) || null : null;
   if (current) renderTrip();
@@ -399,8 +594,7 @@ function journalSheet(t, date) {
       if (del && confirm('刪除這張照片？')) {
         const id = del.dataset.pdel;
         j.photos = j.photos.filter((x) => x !== id);
-        await DB.del('photos', id);
-        if (photoURLs.has(id)) { URL.revokeObjectURL(photoURLs.get(id)); photoURLs.delete(id); }
+        deletePhoto(id);
         await saveTrip(t);
         drawPhotos();
       }
@@ -412,9 +606,8 @@ function journalSheet(t, date) {
       toast(`處理 ${files.length} 張照片中…`);
       for (const f of files) {
         try {
-          const blob = await compressImage(f);
           const id = uid();
-          await DB.put('photos', { id, blob, tripId: t.id });
+          await savePhoto(id, t.id, await photoForCloud(f));
           j.photos.push(id);
         } catch (err) { toast(err.message); }
       }
@@ -432,25 +625,29 @@ function journalSheet(t, date) {
 function settingsSheet() {
   openSheet(`<div>
     <div class="sheet-head"><span style="min-width:48px"></span><b>設定與備份</b><button class="link strong" data-act="close-sheet">完成</button></div>
-    <p class="hint">所有資料（包含照片）都只存在<b>這支手機的瀏覽器</b>裡，不會上傳到任何伺服器。換手機或清除瀏覽器資料前，記得先匯出備份。</p>
-    <button class="btn" data-act="export">⬇️ 匯出備份檔</button>
+    <div class="account">
+      <img src="${esc(user.user_metadata?.avatar_url || 'icons/icon-192.png')}" alt="" referrerpolicy="no-referrer">
+      <div><b>${esc(user.user_metadata?.full_name || 'Google 帳號')}</b><small>${esc(user.email || '離線中')}</small></div>
+    </div>
+    <p class="hint">資料存在你的 Google 帳號底下，用同一個帳號登入的手機或電腦都會自動同步。沒網路時也能新增、修改，連上網路後會自動上傳。</p>
+    <p class="hint">共 ${trips.length} 趟旅程・${pending.count() ? `⏳ 有 ${pending.count()} 項變更等待上傳` : '✅ 已全部同步'}${lastSync ? `（上次同步 ${new Date(lastSync).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })}）` : ''}</p>
+    <button class="btn" data-act="sync-now">🔄 立即同步</button>
+    <button class="btn ghost" data-act="logout">登出</button>
+    <h2 class="section">備份</h2>
+    <p class="hint">可以另外匯出一份檔案自己保存（包含照片）。</p>
+    <button class="btn ghost" data-act="export">⬇️ 匯出備份檔</button>
     <label class="btn ghost file-btn">⬆️ 從備份檔還原<input type="file" accept="application/json,.json" id="imp"></label>
-    <p class="hint" id="usage"></p>
     <h2 class="section">安裝到手機主畫面</h2>
     <p class="hint">
       <b>iPhone：</b>用 Safari 開啟 → 點下方「分享」按鈕 → 「加入主畫面」。<br>
       <b>Android：</b>用 Chrome 開啟 → 右上角 ⋮ → 「安裝應用程式」或「加到主畫面」。
     </p>
-  </div>`, async (panel) => {
+  </div>`, (panel) => {
     $('#imp', panel).onchange = async (e) => {
       const f = e.target.files[0];
       e.target.value = '';
       if (f) importData(f);
     };
-    if (navigator.storage && navigator.storage.estimate) {
-      const { usage } = await navigator.storage.estimate();
-      $('#usage', panel).textContent = `目前使用空間：約 ${(usage / 1024 / 1024).toFixed(1)} MB・共 ${trips.length} 趟旅程`;
-    }
   });
 }
 
@@ -472,18 +669,17 @@ function compressImage(file, max = 1600, quality = 0.82) {
     img.src = url;
   });
 }
+// 照片壓縮到約 700 KB 以下，省雲端空間也上傳得快
+async function photoForCloud(file) {
+  let blob = await compressImage(file, 1280, 0.75);
+  if (blob.size > 700_000) blob = await compressImage(file, 1024, 0.6);
+  return blob;
+}
 async function hydratePhotos(root) {
-  for (const img of root.querySelectorAll('img[data-photo]')) {
-    const id = img.dataset.photo;
-    let u = photoURLs.get(id);
-    if (!u) {
-      const p = await DB.get('photos', id);
-      if (!p) continue;
-      u = URL.createObjectURL(p.blob);
-      photoURLs.set(id, u);
-    }
-    img.src = u;
-  }
+  await Promise.all([...root.querySelectorAll('img[data-photo]')].map(async (img) => {
+    const u = await photoURL(img.dataset.photo);
+    if (u) img.src = u;
+  }));
 }
 function viewPhoto(src) {
   const v = document.createElement('div');
@@ -509,11 +705,14 @@ async function shareFile(file, title) {
 
 async function exportData() {
   toast('準備備份中…');
-  const photos = await DB.all('photos');
-  const data = {
-    app: 'cuticuti', version: 1, exportedAt: new Date().toISOString(), trips,
-    photos: await Promise.all(photos.map(async (p) => ({ id: p.id, tripId: p.tripId, data: await blobToDataURL(p.blob) }))),
-  };
+  const photos = [];
+  for (const t of trips) {
+    for (const id of tripPhotoIds(t)) {
+      try { photos.push({ id, tripId: t.id, data: await blobToDataURL(await photoBlob(id)) }); }
+      catch { /* 離線且沒下載過的照片略過 */ }
+    }
+  }
+  const data = { app: 'cuticuti', version: 1, exportedAt: new Date().toISOString(), trips, photos };
   const file = new File([JSON.stringify(data)], `cuticuti-備份-${todayISO()}.json`, { type: 'application/json' });
   await shareFile(file, 'CutiCuti 備份');
 }
@@ -523,15 +722,7 @@ async function importData(file) {
     const data = JSON.parse(await file.text());
     if (data.app !== 'cuticuti' || !Array.isArray(data.trips)) throw new Error('這不是 CutiCuti 的備份檔');
     if (!confirm(`備份內有 ${data.trips.length} 趟旅程。\n相同的旅程會被備份內容覆蓋，確定還原？`)) return;
-    for (const p of data.photos || []) {
-      const blob = await (await fetch(p.data)).blob();
-      await DB.put('photos', { id: p.id, tripId: p.tripId, blob });
-    }
-    for (const t of data.trips) {
-      await DB.put('trips', t);
-      const i = trips.findIndex((x) => x.id === t.id);
-      if (i >= 0) trips[i] = t; else trips.push(t);
-    }
+    await importTrips(data.trips, data.photos || []);
     await closeSheet();
     route();
     toast('還原完成 🎉');
@@ -567,6 +758,17 @@ document.addEventListener('click', async (e) => {
   const id = el.dataset.id;
   switch (el.dataset.act) {
     case 'close-sheet': return closeSheet();
+    case 'login': return login(el);
+    case 'logout': return logout();
+    case 'sync-now':
+      try {
+        toast('同步中…');
+        await sync();
+        await closeSheet();
+        route();
+        toast('已同步 ✅');
+      } catch (err) { toast('同步失敗：' + friendly(err)); }
+      return;
     case 'settings': return settingsSheet();
     case 'export': return exportData();
     case 'new-trip': return tripForm();
@@ -574,9 +776,7 @@ document.addEventListener('click', async (e) => {
     case 'share-trip': return shareTrip(t);
     case 'del-trip':
       if (!confirm(`確定刪除「${t.name}」？\n行程、日記和照片都會一起刪除，無法復原。`)) return;
-      for (const j of Object.values(t.journal)) for (const pid of j.photos || []) await DB.del('photos', pid);
-      await DB.del('trips', t.id);
-      trips = trips.filter((x) => x !== t);
+      await deleteTripData(t);
       await closeSheet();
       location.hash = '#/';
       return;
@@ -625,19 +825,108 @@ document.addEventListener('keydown', (e) => {
 
 window.addEventListener('hashchange', () => { ui = { tab: 'plan', day: null }; route(); });
 
-/* ============ 啟動 ============ */
-(async function init() {
+/* ============ 登入 / 啟動 ============ */
+async function login(btn) {
+  btn.disabled = true;
+  const { error } = await sb.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo: location.origin + location.pathname, queryParams: { prompt: 'select_account' } },
+  });
+  if (error) { toast('登入失敗：' + friendly(error)); btn.disabled = false; }
+}
+
+async function logout() {
+  const n = pending.count();
+  const msg = n
+    ? `還有 ${n} 項變更沒上傳到雲端，登出會遺失這些變更！\n確定要登出嗎？`
+    : '確定要登出嗎？\n這支手機上的快取會被清除，雲端的資料不受影響，下次登入就會回來。';
+  if (!confirm(msg)) return;
+  await closeSheet();
+  await sb.auth.signOut({ scope: 'local' }); // 只登出這支手機
+  // 清掉本機快取，避免下一個使用這台裝置的人看到
+  trips = [];
+  photoURLs.forEach((u) => URL.revokeObjectURL(u));
+  photoURLs.clear();
+  pending.clear();
+  store.set('cache-user', '');
+  await DB.clear().catch(() => {});
+}
+
+// 自己保存的備份檔、或舊版（登入功能之前）存在手機裡的資料，都用這個寫進帳號
+async function importTrips(tripList, photoList) {
+  for (const p of photoList) {
+    const blob = p.blob || (await (await fetch(p.data)).blob());
+    await savePhoto(p.id, p.tripId || '', blob);
+  }
+  for (const t of tripList) await saveTrip(t);
+}
+
+async function boot() {
+  if (!user) return route();
+  const cacheUser = store.get('cache-user');
+  if (cacheUser !== user.id) {
+    const local = await DB.all('trips');
+    if (!cacheUser && local.length && confirm(`這支手機上有 ${local.length} 趟之前存的旅程，要上傳到你的 Google 帳號嗎？`)) {
+      // 舊版只存在手機裡的資料：全部標記為待上傳
+      local.forEach((t) => pending.add('trips', t.id));
+      (await DB.keys('photos')).forEach((id) => pending.add('photos', id));
+    } else {
+      await DB.clear();
+      pending.clear();
+    }
+    store.set('cache-user', user.id);
+  }
+  trips = await DB.all('trips');
+  if (trips.length) route(); else renderLoading('同步中…');
   try {
-    await DB.open();
-    trips = await DB.all('trips');
+    await sync();
+    if (!isEditing()) route();
   } catch (err) {
-    app.innerHTML = `<div class="empty"><div class="big">⚠️</div><b>無法開啟資料庫</b>${esc(err.message)}<br>若是無痕模式，請改用一般模式開啟。</div>`;
+    if (!trips.length) route();
+    toast(user.offline ? '目前離線，顯示的是上次同步的資料' : '同步失敗：' + friendly(err));
+  }
+}
+
+// 從背景切回來、或網路恢復時，自動同步
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && user && Date.now() - lastSync > 30000) scheduleSync(0);
+});
+window.addEventListener('online', async () => {
+  if (user?.offline) {
+    const { data } = await sb.auth.getSession();
+    if (data.session) user = data.session.user;
+  }
+  if (user) scheduleSync(0);
+});
+
+window.addEventListener('hashchange', () => { ui = { tab: 'plan', day: null }; route(); });
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+
+(async () => {
+  if (!configured) {
+    app.innerHTML = '<div class="empty"><div class="big">🔧</div><b>還沒連上雲端資料庫</b>請在 config.js 填入 Supabase 的 Project URL 和 Publishable key</div>';
     return;
   }
-  route();
-  // 請求瀏覽器不要自動清除資料
-  if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
-  if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
+  renderLoading();
+  await DB.open();
+  const { data } = await sb.auth.getSession(); // 會順便處理 Google 登入完跳回來的網址
+  const params = new URLSearchParams(location.search);
+  if (params.has('code') || params.has('error')) {
+    const err = params.get('error_description');
+    if (err) toast('登入失敗：' + err);
+    history.replaceState(null, '', location.pathname + location.hash);
   }
-})();
+  user = data.session?.user ?? null;
+  // 離線打開時登入憑證可能無法更新：先用上次同步的資料，網路恢復後再重新連線
+  if (!user && !navigator.onLine && store.get('cache-user')) user = { id: store.get('cache-user'), offline: true };
+  sb.auth.onAuthStateChange((_event, session) => {
+    const u = session?.user ?? null;
+    if ((u?.id ?? null) === (user?.id ?? null)) { if (u) user = u; return; } // 同一個人（例如憑證更新）
+    if (!u && user?.offline) return;
+    user = u;
+    boot();
+  });
+  boot();
+})().catch((err) => {
+  app.innerHTML = `<div class="empty"><div class="big">⚠️</div><b>啟動失敗</b>${esc(friendly(err))}<br>若是無痕模式，請改用一般模式開啟。</div>`;
+});

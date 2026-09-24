@@ -15,7 +15,14 @@
 - **分享行程**：轉成文字，可直接貼到 LINE
 - **備份 / 還原**：匯出成 JSON 檔（含照片）
 
-資料只存在手機瀏覽器裡（IndexedDB），不會上傳。換手機前記得先匯出備份。
+## 資料存在哪？
+
+用 Google 帳號登入後，旅程和照片存在 **Supabase** 雲端資料庫（和 FooooooD 共用同一個專案，資料表分開），手機和電腦自動同步。
+每次修改會先存在手機上，再在背景上傳，所以**沒網路時也能新增、修改**，連上網路後會自動上傳。
+
+- 資料庫設定：`supabase/setup.sql`（在 Supabase 的 SQL Editor 執行）
+- 連線設定：`config.js`（只放 Project URL 和 Publishable key，**不要放 secret key**）
+- Supabase → Authentication → URL Configuration → Redirect URLs 要加入 App 網址
 
 ## 在電腦上預覽
 ```bash

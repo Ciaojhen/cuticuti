@@ -249,6 +249,26 @@ a { color: inherit; }
 .meter { height: 8px; background: var(--line); border-radius: 99px; overflow: hidden; }
 .meter i { display: block; height: 100%; background: var(--accent); border-radius: 99px; }
 
+/* ---------- 登入 ---------- */
+.login {
+  min-height: 100vh; max-width: 420px; margin: 0 auto; padding: calc(env(safe-area-inset-top) + 40px) 24px 40px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
+}
+.login-icon { width: 88px; height: 88px; border-radius: 22px; box-shadow: var(--shadow); }
+.login h1 { font-size: 32px; margin: 18px 0 2px; letter-spacing: -.02em; }
+.login > p { color: var(--muted); margin: 0 0 32px; }
+.login .hint { margin-top: 18px; }
+.google-btn {
+  display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%;
+  padding: 14px; border-radius: 14px; border: 1px solid var(--line); background: var(--card);
+  font-size: 16px; font-weight: 600; cursor: pointer; box-shadow: var(--shadow);
+}
+.google-btn:disabled { opacity: .6; cursor: wait; }
+.account { display: flex; align-items: center; gap: 12px; padding: 14px; background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); }
+.account img { width: 44px; height: 44px; border-radius: 50%; background: var(--line); }
+.account div { flex: 1; min-width: 0; line-height: 1.35; }
+.account small { display: block; color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; }
+
 /* ---------- 提示 ---------- */
 #toast {
   position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 90px); z-index: 80;
