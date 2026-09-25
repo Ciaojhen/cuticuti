@@ -285,6 +285,14 @@ async function doSync() {
 /* ============ 畫面 ============ */
 const app = $('#app');
 
+// 線條圖示（頂部按鈕用）
+const icon = (paths) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
+const ICONS = {
+  settings: icon('<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>'),
+  edit: icon('<path d="M21.17 6.81a1 1 0 0 0-3.98-3.98L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z"/><path d="m15 5 4 4"/>'),
+  back: icon('<path d="m15 18-6-6 6-6"/>'),
+};
+
 // Logo：小車的排氣管噴出「cuticuti」字樣的煙，字母一路往上飄、慢慢變淡
 const CAR_SVG = `<svg class="logo-car" viewBox="0 0 66 36" aria-hidden="true">
   <path class="car-body" d="M4 26V18q0-4 4-4h6l6-8q1-1 3-1h15q2 0 3 1l6 8h3q4 0 4 4v8z"/>
@@ -344,7 +352,7 @@ function renderHome() {
   app.innerHTML = `
     <header class="topbar"><div class="bar">
       <h1 class="brand">${logo()}</h1>
-      <button class="icon-btn" data-act="settings" aria-label="設定與備份">⚙️</button>
+      <button class="icon-btn" data-act="settings" aria-label="設定與備份">${ICONS.settings}</button>
     </div></header>
     <main class="page">
       ${trips.length ? '' : `<div class="empty"><div class="big">🧳</div><b>還沒有旅程</b>按右下角新增第一趟旅行吧！</div>`}
@@ -366,9 +374,9 @@ function renderTrip() {
   app.innerHTML = `
     <header class="topbar">
       <div class="bar">
-        <a class="icon-btn" href="#/" aria-label="返回">‹</a>
+        <a class="icon-btn" href="#/" aria-label="返回">${ICONS.back}</a>
         <div class="title"><b>${esc(t.emoji)} ${esc(t.name)}</b><small>${t.dest ? esc(t.dest) + '・' : ''}${fmtRange(t)}</small></div>
-        <button class="icon-btn" data-act="edit-trip" aria-label="編輯旅程">✏️</button>
+        <button class="icon-btn" data-act="edit-trip" aria-label="編輯旅程">${ICONS.edit}</button>
       </div>
       <nav class="tabs">${TABS.map(([k, l]) => `<button class="tab ${ui.tab === k ? 'on' : ''}" data-act="tab" data-tab="${k}">${l}</button>`).join('')}</nav>
     </header>

@@ -1,7 +1,7 @@
 // 離線快取：讓 App 在沒有網路時（例如在國外飛機上）也能打開
 // 修改 App 後，把版本號 +1，手機上的 App 就會自動更新
 // 抓檔案時一律跳過瀏覽器的 HTTP 快取（GitHub Pages 預設會快取 10 分鐘），才拿得到剛上傳的新版
-const CACHE = 'cuticuti-v9';
+const CACHE = 'cuticuti-v10';
 const ASSETS = [
   './',
   './index.html',
