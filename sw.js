@@ -1,6 +1,7 @@
 // 離線快取：讓 App 在沒有網路時（例如在國外飛機上）也能打開
-// 修改下面清單裡的檔案後，把版本號 +1
-const CACHE = 'cuticuti-v7';
+// 修改 App 後，把版本號 +1，手機上的 App 就會自動更新
+// 抓檔案時一律跳過瀏覽器的 HTTP 快取（GitHub Pages 預設會快取 10 分鐘），才拿得到剛上傳的新版
+const CACHE = 'cuticuti-v9';
 const ASSETS = [
   './',
   './index.html',
@@ -15,7 +16,11 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  e.waitUntil(
+    caches.open(CACHE)
+      .then((c) => c.addAll(ASSETS.map((url) => new Request(url, { cache: 'reload' }))))
+      .then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener('activate', (e) => {
@@ -35,8 +40,9 @@ self.addEventListener('fetch', (e) => {
   // 有網路就拿最新版（最多等 3 秒），沒網路或太慢就用快取
   e.respondWith(
     caches.open(CACHE).then(async (cache) => {
-      const network = fetch(req).then((res) => {
-        if (res.ok) cache.put(req, res.clone());
+      const network = fetch(req.url, { cache: 'no-cache' }).then((res) => {
+        // 不快取帶參數的網址（例如 Google 登入跳回來的 ?code=...）
+        if (res.ok && !new URL(req.url).search) cache.put(req, res.clone());
         return res;
       });
       const timeout = new Promise((r) => setTimeout(r, 3000));

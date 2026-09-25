@@ -41,4 +41,4 @@ PWA 必須透過 **HTTPS** 網址開啟，才能離線使用。最簡單的免�
 - **Android**：用 Chrome 開啟 → ⋮ → 「安裝應用程式」
 
 ## 更新程式後
-修改 `sw.js` 裡的 `CACHE` 版本號（例如 `cuticuti-v2` → `cuticuti-v3`），重新部署即可。
+修改 `sw.js` 裡的 `CACHE` 版本號（例如 `cuticuti-v9` → `cuticuti-v10`），推上 GitHub 即可。手機上的 App 打開或切回來時會自動檢查新版，裝好後自動重新載入。

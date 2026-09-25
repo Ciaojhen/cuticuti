@@ -497,6 +497,7 @@ async function closeSheet() {
   root.classList.remove('open');
   document.body.classList.remove('noscroll');
   setTimeout(() => { if (!root.classList.contains('open')) root.innerHTML = ''; }, 300);
+  if (updateReady) location.reload();
 }
 const head = (title, submitLabel = '儲存') =>
   `<div class="sheet-head"><button type="button" class="link" data-act="close-sheet">取消</button><b>${title}</b><button class="link strong" type="submit">${submitLabel}</button></div>`;
@@ -913,7 +914,21 @@ window.addEventListener('online', async () => {
 });
 
 window.addEventListener('hashchange', () => { ui = { tab: 'plan', day: null }; route(); });
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+// 自動更新：每次打開或切回 App 都檢查有沒有新版，新版裝好就自動重新載入（正在編輯時等關掉表單再載入）
+let updateReady = false;
+if ('serviceWorker' in navigator) {
+  const hadController = Boolean(navigator.serviceWorker.controller);
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController) return; // 第一次安裝，不用重新載入
+    if (isEditing()) updateReady = true;
+    else location.reload();
+  });
+  navigator.serviceWorker.register('sw.js').then((reg) => {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') reg.update().catch(() => {});
+    });
+  }).catch(() => {});
+}
 
 (async () => {
   if (!configured) {
