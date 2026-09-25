@@ -285,7 +285,7 @@ async function doSync() {
 /* ============ 畫面 ============ */
 const app = $('#app');
 
-// Logo：小車的排氣管噴出「CutiCuti」字樣的煙，字母越後面越大、越往上飄
+// Logo：小車的排氣管噴出「cuticuti」字樣的煙，字母一路往上飄、慢慢變淡
 const CAR_SVG = `<svg class="logo-car" viewBox="0 0 66 36" aria-hidden="true">
   <path class="car-body" d="M4 26V18q0-4 4-4h6l6-8q1-1 3-1h15q2 0 3 1l6 8h3q4 0 4 4v8z"/>
   <path class="car-win" d="M17.5 14l4.7-6.2H29V14zM31 7.8h6.2l4.8 6.2H31z"/>
@@ -294,8 +294,8 @@ const CAR_SVG = `<svg class="logo-car" viewBox="0 0 66 36" aria-hidden="true">
   <circle class="car-wheel" cx="43" cy="27" r="5.6"/><circle class="car-hub" cx="43" cy="27" r="2"/>
 </svg>`;
 function logo() {
-  const letters = [...'CutiCuti'].map((c, i) => `<b style="--i:${i}">${c}</b>`).join('');
-  return `<span class="logo" role="img" aria-label="CutiCuti">${CAR_SVG}<span class="puffs" aria-hidden="true"><i></i><i></i><i></i></span><span class="smoke" aria-hidden="true">${letters}</span></span>`;
+  const letters = [...'cuticuti'].map((c, i) => `<b style="--i:${i}">${c}</b>`).join('');
+  return `<span class="logo" role="img" aria-label="cuticuti">${CAR_SVG}<span class="puffs" aria-hidden="true"><i></i><i></i><i></i></span><span class="smoke" aria-hidden="true">${letters}</span></span>`;
 }
 
 function renderLogin() {

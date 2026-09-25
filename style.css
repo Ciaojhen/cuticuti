@@ -52,7 +52,7 @@ a { color: inherit; }
   backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
 }
 .bar { display: flex; align-items: center; gap: 10px; max-width: 680px; margin: 0 auto; padding: 10px 16px; }
-.brand { flex: 1; margin: 0; font-size: 28px; }
+.brand { flex: 1; margin: 0; font-size: 21px; }
 .icon-btn {
   flex: none; width: 40px; height: 40px; border-radius: 12px; border: 0;
   background: var(--card); box-shadow: var(--shadow);
@@ -280,10 +280,10 @@ a { color: inherit; }
   100% { transform: translate(.55em, -.45em) scale(1.9); opacity: 0; }
 }
 
-/* 字母：越後面越大、越往上飄、越淡，像煙慢慢擴散 */
+/* 字母：一路往上飄、越來越淡，像煙慢慢散開 */
 .smoke { display: inline-flex; align-items: flex-end; }
 .smoke b {
-  display: inline-block; font-size: calc(.84em + var(--i) * .04em); margin-left: -.02em;
+  display: inline-block; margin-left: -.01em;
   background: linear-gradient(180deg, var(--smoke-light) 0%, var(--smoke) 75%);
   -webkit-background-clip: text; background-clip: text; color: transparent;
   filter: drop-shadow(0 0 .07em var(--smoke-light));
@@ -311,7 +311,7 @@ a { color: inherit; }
   display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
 }
 .login-icon { width: 88px; height: 88px; border-radius: 22px; box-shadow: var(--shadow); }
-.login h1 { font-size: 44px; margin: 22px 0 8px; }
+.login h1 { font-size: 32px; margin: 22px 0 8px; }
 .login > p { color: var(--muted); margin: 0 0 32px; }
 .login .hint { margin-top: 18px; }
 .google-btn {
