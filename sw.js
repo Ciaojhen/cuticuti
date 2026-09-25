@@ -1,6 +1,6 @@
 // 離線快取：讓 App 在沒有網路時（例如在國外飛機上）也能打開
 // 修改下面清單裡的檔案後，把版本號 +1
-const CACHE = 'cuticuti-v4';
+const CACHE = 'cuticuti-v5';
 const ASSETS = [
   './',
   './index.html',
