@@ -60,12 +60,12 @@ function tripStatus(t) {
 const byTime = (a, b) => (a.time || '99:99').localeCompare(b.time || '99:99');
 
 let toastTimer;
-function toast(msg) {
+function toast(msg, ms = 2200) {
   const el = $('#toast');
   el.textContent = msg;
   el.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+  toastTimer = setTimeout(() => el.classList.remove('show'), ms);
 }
 
 /* ============ 資料：本機優先 + Supabase 雲端同步 ============
@@ -848,8 +848,18 @@ document.addEventListener('keydown', (e) => {
 window.addEventListener('hashchange', () => { ui = { tab: 'plan', day: null }; route(); });
 
 /* ============ 登入 / 啟動 ============ */
+// 雲端伺服器連不連得上（Supabase 免費專案太久沒用會被暫停，網址會直接消失）
+async function cloudReachable() {
+  try {
+    const res = await fetch(CFG.SUPABASE_URL + '/auth/v1/health', { headers: { apikey: CFG.SUPABASE_KEY }, cache: 'no-store' });
+    return res.ok;
+  } catch { return false; }
+}
+const CLOUD_DOWN = '連不上雲端伺服器。如果有網路，可能是 Supabase 專案被暫停了，請到 Supabase 後台按「Restore project」恢復';
+
 async function login(btn) {
   btn.disabled = true;
+  if (!(await cloudReachable())) { toast(CLOUD_DOWN, 6000); btn.disabled = false; return; }
   const { error } = await sb.auth.signInWithOAuth({
     provider: 'google',
     options: { redirectTo: location.origin + location.pathname, queryParams: { prompt: 'select_account' } },
@@ -905,19 +915,24 @@ async function boot() {
     if (!isEditing()) route();
   } catch (err) {
     if (!trips.length) route();
-    toast(user.offline ? '目前離線，顯示的是上次同步的資料' : '同步失敗：' + friendly(err));
+    toast(user.offline ? (navigator.onLine ? '連不上雲端伺服器，先顯示上次同步的資料' : '目前離線，顯示的是上次同步的資料') : '同步失敗：' + friendly(err));
   }
 }
 
 // 從背景切回來、或網路恢復時，自動同步
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && user && Date.now() - lastSync > 30000) scheduleSync(0);
+// 離線模式下，雲端恢復後重新取得登入狀態
+async function reconnect() {
+  if (!user?.offline) return;
+  const { data } = await sb.auth.getSession();
+  if (data.session) user = data.session.user;
+}
+document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState !== 'visible' || !user) return;
+  await reconnect();
+  if (user.offline || Date.now() - lastSync > 30000) scheduleSync(0);
 });
 window.addEventListener('online', async () => {
-  if (user?.offline) {
-    const { data } = await sb.auth.getSession();
-    if (data.session) user = data.session.user;
-  }
+  await reconnect();
   if (user) scheduleSync(0);
 });
 
@@ -945,7 +960,7 @@ if ('serviceWorker' in navigator) {
   }
   renderLoading();
   await DB.open();
-  const { data } = await sb.auth.getSession(); // 會順便處理 Google 登入完跳回來的網址
+  const { data, error: sessionError } = await sb.auth.getSession(); // 會順便處理 Google 登入完跳回來的網址
   const params = new URLSearchParams(location.search);
   if (params.has('code') || params.has('error')) {
     const err = params.get('error_description');
@@ -953,8 +968,10 @@ if ('serviceWorker' in navigator) {
     history.replaceState(null, '', location.pathname + location.hash);
   }
   user = data.session?.user ?? null;
-  // 離線打開時登入憑證可能無法更新：先用上次同步的資料，網路恢復後再重新連線
-  if (!user && !navigator.onLine && store.get('cache-user')) user = { id: store.get('cache-user'), offline: true };
+  // 離線、或雲端伺服器暫時連不上時，登入憑證可能無法更新：先用上次同步的資料，恢復連線後再重新連線
+  if (!user && store.get('cache-user') && (!navigator.onLine || sessionError?.name === 'AuthRetryableFetchError' || !(await cloudReachable()))) {
+    user = { id: store.get('cache-user'), offline: true };
+  }
   sb.auth.onAuthStateChange((_event, session) => {
     const u = session?.user ?? null;
     if ((u?.id ?? null) === (user?.id ?? null)) { if (u) user = u; return; } // 同一個人（例如憑證更新）

@@ -1,0 +1,26 @@
+# Supabase 免費專案大約一週沒有使用就會被自動暫停（CutiCuti 和 FooooooD 共用的專案）
+# 這個排程每 3 天去讀一次資料庫，讓專案保持「使用中」
+# 只用公開的 Publishable key 做一次讀取，因為有權限規則（RLS），讀不到任何人的資料
+name: Supabase keep-alive
+
+on:
+  schedule:
+    - cron: '17 3 */3 * *'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 \
+            "https://rdltvbrpobsxfwzjssmo.supabase.co/rest/v1/cuti_trips?select=id&limit=1" \
+            -H "apikey: sb_publishable_Gffty1whIXDOF--1QMF0QQ_ExO6wHrh")
+          echo "Supabase 回應：$code"
+          if [ "$code" != "200" ]; then
+            echo "::error::連不上 Supabase（$code），專案可能已被暫停，請到 Supabase 後台按 Restore project"
+            exit 1
+          fi
