@@ -21,17 +21,22 @@ const stayOf = (i) => (i.stay !== '' && i.stay != null ? Number(i.stay) : STAY_D
 
 /* ---------- 搜尋地點 ---------- */
 let lastSearch = 0;
-async function searchPlaces(q, near) {
+async function nominatim(params) {
   const wait = 1100 - (Date.now() - lastSearch);
   if (wait > 0) await sleep(wait);
   lastSearch = Date.now();
-  const p = new URLSearchParams({ q, format: 'jsonv2', limit: '6', extratags: '1', namedetails: '1', 'accept-language': 'zh-Hant,zh-TW' });
-  // 有旅程地點時，優先找附近的結果（不是硬性限制）
-  if (near) p.set('viewbox', [near.lon - 0.6, near.lat + 0.6, near.lon + 0.6, near.lat - 0.6].join(','));
+  const p = new URLSearchParams({ format: 'jsonv2', 'accept-language': 'zh-Hant,zh-TW', ...params });
   const res = await fetch('https://nominatim.openstreetmap.org/search?' + p);
   if (!res.ok) throw new Error(`搜尋失敗（${res.status}）`);
+  return res.json();
+}
+
+async function searchPlaces(q, near) {
+  // 有旅程地點時，優先找附近的結果（不是硬性限制）
+  const viewbox = near ? { viewbox: [near.lon - 0.6, near.lat + 0.6, near.lon + 0.6, near.lat - 0.6].join(',') } : {};
+  const results = await nominatim({ q, limit: '6', extratags: '1', namedetails: '1', ...viewbox });
   const seen = new Set();
-  return (await res.json()).filter((r) => {
+  return results.filter((r) => {
     const key = `${r.name}|${r.display_name}`;
     if (seen.has(key)) return false;
     seen.add(key);
@@ -48,6 +53,52 @@ async function searchPlaces(q, near) {
       hours: r.extratags?.opening_hours || '',
     };
   });
+}
+
+/* ---------- 用地址定位 ----------
+ * OpenStreetMap 找不到日本、台灣的完整門牌，所以把 Google 地圖複製來的地址逐步縮短
+ * （去掉郵遞區號、大樓名稱、門牌），找到「町、丁目、路」這一層，誤差大約幾百公尺 */
+const PREFECTURE = /^(東京都|北海道|京都府|大阪府|[^\s、,]{2,3}県)/;
+const looksLikeAddress = (s) => {
+  const t = s.normalize('NFKC').replace(/^(日本|台灣|臺灣)[、,\s]*/, '').replace(/〒?\s*\d{3}-?\d{4}\s*/, '');
+  return /〒|\d+丁目|\d+[-－]\d+|\d+[號号]/.test(s) // 郵遞區號、丁目、門牌
+    || /(東京都|北海道|京都府|大阪府|[^\s、,]{2,3}県).*[市区町村郡]/.test(t) // 日本：都道府縣＋市區町村
+    || /^[^\s]{1,4}市.{1,6}[区區]/.test(t) // ○○市○○区
+    || /[市縣].{1,4}[區鄉鎮].*[路街段道]/.test(t); // 台灣：市＋區＋路
+};
+
+// 卡片上顯示用：去掉國家、郵遞區號、都道府縣，讓地址短一點
+function shortPlace(s) {
+  if (!looksLikeAddress(s)) return s;
+  return s.replace(/^(日本|台灣|臺灣)[、,\s]*/, '').replace(/〒?\s*\d{3}-?\d{4}\s*/, '').replace(/^\d{3,6}(?=\D)/, '').replace(PREFECTURE, '').trim();
+}
+
+function addressCandidates(raw) {
+  const s = raw.normalize('NFKC')
+    .replace(/^(日本|台灣|臺灣|Japan|Taiwan)[、,\s]*/i, '')
+    .replace(/〒?\s*\d{3}-?\d{4}\s*/, '') // 日本郵遞區號
+    .replace(/^\d{3,6}\s*/, '') // 台灣郵遞區號
+    .replace(/\s+.*$/, '') // 空白後面通常是大樓名稱
+    .trim();
+  const out = [];
+  const add = (x) => { x = x.trim(); if (x.length >= 3 && !out.includes(x)) out.push(x); };
+  add(s);
+  add(s.replace(/(\d+丁目).*$/, '$1')); // 保留到「丁目」
+  add(s.replace(/[\d\-－−ー番地號号之樓F]+$/, '')); // 去掉門牌
+  add(s.replace(/\d.*$/, '')); // 從第一個數字開始都去掉
+  add(s.replace(/\d.*$/, '').replace(/[^区區]*?通.*?[上下東西]る/, '')); // 京都的「○○通○○上る」
+  add(s.replace(PREFECTURE, '').replace(/\d.*$/, '').replace(/[^区區]*?通.*?[上下東西]る/, '')); // 去掉都道府縣
+  add(s.replace(/(段|路|街).*$/, '$1')); // 台灣：保留到路／街／段
+  return out;
+}
+
+// 回傳 { lat, lon, matched }（matched 是實際找到的那一段地址），找不到回傳 null
+async function geocodeAddress(raw) {
+  for (const q of addressCandidates(raw)) {
+    const r = await nominatim({ q, limit: '1' });
+    if (r[0]) return { lat: Number(r[0].lat), lon: Number(r[0].lon), matched: q };
+  }
+  return null;
 }
 
 /* ---------- 營業時間（OpenStreetMap opening_hours 常見寫法） ----------

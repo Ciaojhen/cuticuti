@@ -137,7 +137,7 @@ a { color: inherit; }
 .item .t { font-weight: 600; word-break: break-word; }
 .item.done .t { text-decoration: line-through; color: var(--muted); }
 .item.done .dot { filter: grayscale(1); opacity: .6; }
-.place { display: inline-block; font-size: 13px; color: var(--accent); text-decoration: none; margin-top: 2px; word-break: break-all; }
+.place { display: block; max-width: 100%; font-size: 13px; color: var(--accent); text-decoration: none; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .note { margin: 4px 0 0; font-size: 13px; color: var(--muted); white-space: pre-wrap; word-break: break-word; }
 .meta { display: flex; flex-wrap: wrap; gap: 10px; font-size: 12px; color: var(--muted); margin-top: 4px; }
 .meta a { color: var(--accent); text-decoration: none; }

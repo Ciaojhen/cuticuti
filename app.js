@@ -445,7 +445,7 @@ function planView(t) {
       <div class="dot">${c.icon}</div>
       <div class="body">
         <div class="t">${esc(i.title)}</div>
-        ${i.place ? `<a class="place" href="${mapURL(i.place)}" target="_blank" rel="noopener">📍 ${esc(i.place)}</a>` : ''}
+        ${i.place ? `<a class="place" href="${mapURL(i.title && looksLikeAddress(i.place) ? `${i.title} ${i.place}` : i.place)}" target="_blank" rel="noopener">📍 ${esc(shortPlace(i.place))}</a>` : ''}
         ${hb ? `<div class="hours ${hb.bad ? 'bad' : ''}">${ICONS.clock}<span class="hours-text">${hb.text.split('／').map((x) => `<span>${esc(x)}</span>`).join('／')}</span></div>` : ''}
         ${i.note ? `<p class="note">${esc(i.note)}</p>` : ''}
         ${meta ? `<div class="meta">${meta}</div>` : ''}
@@ -651,7 +651,7 @@ function itemForm(t, item) {
     </div>
     <div class="field"><span>地點</span>
       <div class="search-row">
-        <input name="place" value="${esc(d.place)}" placeholder="地名或地址" enterkeyhint="search">
+        <input name="place" value="${esc(d.place)}" placeholder="店名、地名，或貼上地址" enterkeyhint="search">
         <button type="button" class="search-btn" id="place-search">${ICONS.search}搜尋</button>
       </div>
       <div class="results" id="place-results"></div>
@@ -692,7 +692,12 @@ function itemForm(t, item) {
     $('#weekdays', panel).addEventListener('change', () => { daysTouched = true; });
     const showStatus = () => {
       const el = $('#geo-status', panel);
-      if (!geo) { el.textContent = '搜尋並選擇地點，會自動帶入營業時間'; return; }
+      if (!geo) { el.textContent = '輸入店名或貼上 Google 地圖的地址，按「搜尋」定位'; return; }
+      if (geo.approx) {
+        el.innerHTML = `📍 依地址定位，大概在「${esc(geo.approx)}」附近 <button type="button" class="link small" id="geo-clear">清除</button>`;
+        $('#geo-clear', panel).onclick = () => { geo = null; showStatus(); };
+        return;
+      }
       el.innerHTML = `📍 已定位 <button type="button" class="link small" id="geo-clear">清除</button>・${osmHours
         ? `OSM 營業時間：${esc(describeHours(osmHours))}（僅供參考）`
         : 'OSM 沒有營業時間'}`;
@@ -701,7 +706,19 @@ function itemForm(t, item) {
     showStatus();
     const doSearch = async () => {
       const q = form.place.value.trim() || form.title.value.trim();
-      if (!q) return toast('先輸入地點名稱');
+      if (!q) return toast('先輸入店名、地名或地址');
+      // 貼上的是地址：直接用地址定位（不會有營業時間）
+      if (looksLikeAddress(q)) {
+        results.innerHTML = '<p class="hint">用地址定位中…</p>';
+        try {
+          const r = await geocodeAddress(q);
+          results.innerHTML = r ? '' : '<p class="hint">這個地址找不到位置。可以試著只留到「町、丁目」或「路、街」再搜尋一次。</p>';
+          if (r) { geo = { lat: r.lat, lon: r.lon, approx: r.matched }; osmHours = ''; syncDays(); showStatus(); }
+        } catch (err) {
+          results.innerHTML = `<p class="hint">定位失敗：${esc(friendly(err))}</p>`;
+        }
+        return;
+      }
       results.innerHTML = '<p class="hint">搜尋中…</p>';
       try {
         let near = nearPoint(t);
@@ -712,7 +729,7 @@ function itemForm(t, item) {
         const list = await searchPlaces(q, near);
         results.innerHTML = list.length
           ? list.map((r, k) => `<button type="button" class="result" data-k="${k}"><b>${esc(r.name)}</b><small>${esc(r.address)}</small>${r.hours ? '<small>🕘 有營業時間</small>' : ''}</button>`).join('')
-          : '<p class="hint">找不到這個地點。可以試試當地語言（例如日文漢字）、英文，或加上城市名稱。</p>';
+          : '<p class="hint">找不到這個地點。可以從 Google 地圖複製店家地址，貼在這裡再按「搜尋」。</p>';
         results.onclick = (ev) => {
           const b = ev.target.closest('.result');
           if (!b) return;
