@@ -453,7 +453,7 @@ function planView(t) {
     const seq = showMap && i.geo ? geoItems.indexOf(i) + 1 : 0;
     return `<li class="item ${i.done ? 'done' : ''}" data-act="edit-item" data-id="${i.id}">
       <div class="time ${i.time ? '' : 'none'}">${i.time || '—'}</div>
-      <div class="dot">${seq ? `<span class="pin small">${seq}</span>` : c.icon}</div>
+      ${seq ? `<button type="button" class="dot" data-act="focus-pin" data-seq="${seq}" aria-label="在地圖上看第 ${seq} 個地點"><span class="pin small">${seq}</span></button>` : `<div class="dot">${c.icon}</div>`}
       <div class="body">
         <div class="t">${esc(i.title)}</div>
         ${showPlace ? `<a class="place" href="${mapHref}" target="_blank" rel="noopener">📍 ${esc(i.place)}</a>` : ''}
@@ -473,7 +473,7 @@ function planView(t) {
       <button class="tool mode" data-act="cycle-mode" aria-label="切換交通方式">${MODES[mode].icon} ${MODES[mode].label}</button>
     </div>` : '';
   const mapCard = !showMap || !list.length ? ''
-    : geoItems.length ? `<div class="map-card"><div id="day-map"></div><div class="map-meta" id="map-meta"></div></div>`
+    : geoItems.length ? `<div class="map-card"><div id="day-map"></div><button type="button" class="map-all" data-act="map-all">全部</button><div class="map-meta" id="map-meta"></div></div>`
     : `<p class="hint map-empty">這天還沒有定位的地點。編輯行程時在「地址」貼上地址按「搜尋」（或直接用地點名稱搜尋），就會出現在地圖上。</p>`;
   return `<div class="chips">${chips}</div>${tools}${mapCard}${list.length ? `<ol class="timeline">${list.map(row).join('')}</ol>` : empty}`;
 }
@@ -1026,6 +1026,21 @@ document.addEventListener('click', async (e) => {
       await closeSheet();
       return renderTrip();
     case 'edit-journal': return journalSheet(t, el.dataset.day);
+    case 'focus-pin': {
+      e.stopPropagation();
+      const card = $('.map-card');
+      if (card) {
+        const top = card.getBoundingClientRect().top + window.scrollY - $('.topbar').offsetHeight - 8;
+        if (Math.abs(window.scrollY - top) > 4) window.scrollTo({ top, behavior: 'smooth' });
+        card.classList.add('zoomed');
+      }
+      focusMarker(Number(el.dataset.seq) - 1);
+      return;
+    }
+    case 'map-all':
+      showAllMarkers();
+      $('.map-card')?.classList.remove('zoomed');
+      return;
     case 'toggle-map':
       showMap = !showMap;
       store.set('show-map', showMap ? '1' : '');

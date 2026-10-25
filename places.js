@@ -351,6 +351,8 @@ function loadLeaflet() {
 }
 
 let dayMap = null;
+let dayMarkers = [];
+let dayBounds = null;
 // points：[{ lat, lon, label, done }]；withRoute：要不要畫路線
 async function drawMap(el, points, mode, withRoute, onMeta) {
   await loadLeaflet();
@@ -363,20 +365,38 @@ async function drawMap(el, points, mode, withRoute, onMeta) {
     attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>',
   }).addTo(map);
   const latlngs = points.map((p) => [p.lat, p.lon]);
-  points.forEach((p) => {
-    L.marker([p.lat, p.lon], {
-      icon: L.divIcon({ className: '', html: `<span class="pin ${p.done ? 'done' : ''}">${p.label}</span>`, iconSize: [26, 26], iconAnchor: [13, 13] }),
-      title: p.title,
-    }).addTo(map);
-  });
-  if (latlngs.length === 1) map.setView(latlngs[0], 15);
-  else map.fitBounds(latlngs, { padding: [28, 28], maxZoom: 16 });
+  dayMarkers = points.map((p) => L.marker([p.lat, p.lon], {
+    icon: L.divIcon({ className: '', html: `<span class="pin ${p.done ? 'done' : ''}">${p.label}</span>`, iconSize: [26, 26], iconAnchor: [13, 13] }),
+    title: p.title,
+  }).addTo(map));
+  dayBounds = latlngs;
+  showAllMarkers(false);
   if (!withRoute || points.length < 2) { onMeta(''); return; }
   onMeta('計算路線中…');
   const r = await routeLine(points, mode);
   if (dayMap !== map) return;
   L.polyline(r.line, { color: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#ff6b4a', weight: 4, opacity: 0.85, dashArray: r.estimated ? '6 8' : null }).addTo(map);
   onMeta(`${MODES[mode].icon} 移動約 ${fmtDuration(r.minutes)}・${r.km.toFixed(1)} 公里${r.estimated ? '（直線估算）' : ''}`);
+}
+
+// 地圖拉遠，看到當天全部的地點
+function showAllMarkers(animate = true) {
+  if (!dayMap || !dayBounds?.length) return;
+  dayMarkers.forEach((m) => { m.setZIndexOffset(0); m.getElement()?.querySelector('.pin')?.classList.remove('focus'); });
+  if (dayBounds.length === 1) dayMap.setView(dayBounds[0], 15, { animate });
+  else dayMap.fitBounds(dayBounds, { padding: [28, 28], maxZoom: 16, animate });
+}
+
+// 放大到第 idx 個地點，並讓標記閃一下
+function focusMarker(idx) {
+  const m = dayMarkers[idx];
+  if (!dayMap || !m) return false;
+  dayMarkers.forEach((x) => { x.setZIndexOffset(0); x.getElement()?.querySelector('.pin')?.classList.remove('focus'); });
+  m.setZIndexOffset(1000);
+  dayMap.flyTo(m.getLatLng(), Math.max(dayMap.getZoom(), 16), { duration: 0.6 });
+  const pin = m.getElement()?.querySelector('.pin');
+  if (pin) { void pin.offsetWidth; pin.classList.add('focus'); }
+  return true;
 }
 
 // 把營業時間整理成好讀的文字，例如「週一至週五 09:00–18:00；週六、週日 10:00–17:00」
