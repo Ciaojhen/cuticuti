@@ -411,6 +411,12 @@ function renderTrip() {
 let showMap = store.get('show-map') === '1';
 let suggestion = null; // 建議順序的計算結果，等使用者按「套用」
 
+// 某一天的交通方式：那天有自己設定就用那天的，否則用旅程的預設
+function dayMode(t, day) {
+  const m = t.dayModes?.[day] || t.mode;
+  return MODES[m] ? m : 'walk';
+}
+
 // 目前選的那天（或口袋名單）的行程，依時間排序
 function dayItems(t) {
   const ds = tripDays(t);
@@ -430,12 +436,12 @@ function planView(t) {
   const chips = ds.map((d, n) => {
     const cnt = t.items.filter((i) => i.date === d).length;
     return `<button class="chip ${ui.day === d ? 'on' : ''} ${d === today ? 'today' : ''}" data-act="day" data-day="${d}">
-      <b>Day ${n + 1}${d === today ? '・今天' : ''}</b><small>${fmtDay(d)}${cnt ? `・${cnt}` : ''}</small></button>`;
+      <b>Day ${n + 1}${d === today ? '・今天' : ''}</b><small>${fmtDay(d)}${cnt ? `・${cnt}` : ''}${dayMode(t, d) !== dayMode(t, '') ? ` ${MODES[dayMode(t, d)].icon}` : ''}</small></button>`;
   }).join('') + `<button class="chip ${ui.day === 'none' ? 'on' : ''}" data-act="day" data-day="none"><b>💡 口袋名單</b><small>還沒排進哪天・${unsched.length}</small></button>`;
 
   const list = dayItems(t);
   const geoItems = list.filter((i) => i.geo);
-  const mode = MODES[t.mode] ? t.mode : 'walk';
+  const mode = dayMode(t, ui.day);
   const row = (i) => {
     const c = CATS[i.cat] || CATS.other;
     const url = safeURL(i.url);
@@ -470,7 +476,7 @@ function planView(t) {
   const tools = list.length ? `<div class="plan-tools">
       <button class="tool ${showMap ? 'on' : ''}" data-act="toggle-map">${ICONS.map}路線圖</button>
       ${ui.day !== 'none' ? `<button class="tool" data-act="suggest-order">${ICONS.sparkle}建議順序</button>` : ''}
-      <button class="tool mode" data-act="cycle-mode" aria-label="切換交通方式">${MODES[mode].icon} ${MODES[mode].label}</button>
+      ${ui.day !== 'none' ? `<button class="tool mode" data-act="cycle-mode" aria-label="切換這天的交通方式">${MODES[mode].icon} ${MODES[mode].label}</button>` : ''}
     </div>` : '';
   const mapCard = !showMap || !list.length ? ''
     : geoItems.length ? `<div class="map-card"><div id="day-map"></div><button type="button" class="map-all" data-act="map-all">全部</button><div class="map-meta" id="map-meta"></div></div>`
@@ -494,7 +500,7 @@ function renderDayMap(t) {
     void li.offsetWidth;
     li.classList.add('flash');
   };
-  drawMap(el, pts, MODES[t.mode] ? t.mode : 'walk', ui.day !== 'none', meta, pick).catch((err) => meta(friendly(err)));
+  drawMap(el, pts, dayMode(t, ui.day), ui.day !== 'none', meta, pick).catch((err) => meta(friendly(err)));
 }
 
 async function suggestSheet(t) {
@@ -505,7 +511,7 @@ async function suggestSheet(t) {
   const closed = located.filter((i) => { const h = hoursFor(i, ui.day); return h && !h.length; });
   const geo = located.filter((i) => !closed.includes(i));
   if (!geo.length) return toast('這天的地點都公休，建議換一天', 4000);
-  const mode = MODES[t.mode] ? t.mode : 'walk';
+  const mode = dayMode(t, ui.day);
   toast('計算路線中…');
   const matrix = await travelMatrix(geo.map((i) => i.geo), mode);
   const times = geo.filter((i) => i.time).map((i) => toMin(i.time));
@@ -636,10 +642,10 @@ function tripForm(t) {
     </div>
     <div class="row">
       <label class="field"><span>幣別</span><input name="currency" value="${esc(d.currency)}" placeholder="TWD / JPY"></label>
-      <label class="field"><span>交通方式</span><select name="mode">${Object.entries(MODES).map(([k, m]) => `<option value="${k}" ${(d.mode || 'walk') === k ? 'selected' : ''}>${m.icon} ${m.label}</option>`).join('')}</select></label>
+      <label class="field"><span>預設交通方式</span><select name="mode">${Object.entries(MODES).map(([k, m]) => `<option value="${k}" ${(d.mode || 'walk') === k ? 'selected' : ''}>${m.icon} ${m.label}</option>`).join('')}</select></label>
     </div>
     <div class="field"><span>顏色</span><div class="pick colors" style="margin:0">${COLORS.map((c) => `<label><input type="radio" name="color" value="${c}" ${d.color === c ? 'checked' : ''}><span style="--sw:${c}"></span></label>`).join('')}</div></div>
-    <p class="hint">日期還沒決定也沒關係，可以先建立旅程，把想去的地方放進「口袋名單」。</p>
+    <p class="hint">日期還沒決定也沒關係，可以先建立旅程，把想去的地方放進「口袋名單」。<br>交通方式可以在每天的行程頁個別切換，沒切換的日子用這裡的預設。</p>
     ${isNew ? '' : `<button type="button" class="btn ghost" data-act="share-trip">📤 分享行程（文字）</button>
     <button type="button" class="danger" data-act="del-trip">刪除這趟旅程</button>`}
   </form>`, (panel) => {
@@ -1061,10 +1067,13 @@ document.addEventListener('click', async (e) => {
       store.set('show-map', showMap ? '1' : '');
       return renderTrip();
     case 'cycle-mode': {
+      // 只改目前這一天；改回跟預設一樣時就不另外記
       const keys = Object.keys(MODES);
-      t.mode = keys[(keys.indexOf(MODES[t.mode] ? t.mode : 'walk') + 1) % keys.length];
+      const next = keys[(keys.indexOf(dayMode(t, ui.day)) + 1) % keys.length];
+      t.dayModes = { ...(t.dayModes || {}) };
+      if (next === dayMode(t, '')) delete t.dayModes[ui.day]; else t.dayModes[ui.day] = next;
       await saveTrip(t);
-      toast(`交通方式：${MODES[t.mode].label}`);
+      toast(`Day ${tripDays(t).indexOf(ui.day) + 1} 交通方式：${MODES[next].label}`);
       return renderTrip();
     }
     case 'suggest-order': return suggestSheet(t);
