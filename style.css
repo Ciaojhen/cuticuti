@@ -146,6 +146,61 @@ a { color: inherit; }
 }
 .item.done .check { background: var(--ok); border-color: var(--ok); }
 
+.hours { font-size: 12px; color: var(--muted); margin-top: 3px; }
+.hours.bad { color: var(--danger); }
+
+/* ---------- 路線圖與排序工具 ---------- */
+.plan-tools { display: flex; gap: 8px; margin: 2px 0 10px; overflow-x: auto; scrollbar-width: none; }
+.plan-tools::-webkit-scrollbar { display: none; }
+.tool {
+  flex: none; display: inline-flex; align-items: center; gap: 5px; padding: 7px 12px; border-radius: 99px;
+  border: 1px solid var(--line); background: var(--card); font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.tool svg { width: 16px; height: 16px; }
+.tool.on { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.tool.mode { margin-left: auto; font-weight: 500; color: var(--muted); }
+.map-card { position: relative; isolation: isolate; border-radius: var(--radius); overflow: hidden; background: var(--card); box-shadow: var(--shadow); margin-bottom: 12px; }
+#day-map { height: 260px; background: var(--line); }
+.map-meta { font-size: 13px; color: var(--muted); padding: 8px 12px; min-height: 1em; }
+.map-meta:empty { display: none; }
+.map-empty { margin: 0 4px 12px; }
+.pin {
+  display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%;
+  background: var(--accent); color: #fff; font-size: 13px; font-weight: 800; border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .3); box-sizing: border-box;
+}
+.pin.done { background: #9aa0a6; }
+.pin.small { width: 24px; height: 24px; font-size: 12px; border-width: 0; box-shadow: none; }
+.leaflet-container { font: inherit; }
+
+/* 建議順序 */
+.sugg { list-style: none; margin: 4px 0 12px; padding: 0; }
+.sugg li { display: flex; gap: 12px; align-items: flex-start; background: var(--card); border-radius: 14px; padding: 12px; box-shadow: var(--shadow); }
+.sugg li > div { flex: 1; min-width: 0; }
+.sugg li b { display: block; }
+.sugg small { display: block; font-size: 12px; color: var(--muted); margin-top: 2px; }
+.sugg small.bad { color: var(--danger); }
+.sugg .pin { flex: none; }
+.sugg .leg { font-size: 12px; color: var(--muted); padding: 6px 0 6px 20px; border-left: 2px dashed var(--line); margin-left: 24px; }
+
+/* 地點搜尋 */
+.search-row { display: flex; gap: 8px; }
+.search-row input { flex: 1; }
+.search-btn {
+  flex: none; display: inline-flex; align-items: center; gap: 4px; border: 0; border-radius: 12px; padding: 0 14px;
+  background: var(--accent-soft); color: var(--accent); font-weight: 700; cursor: pointer;
+}
+.search-btn svg { width: 16px; height: 16px; }
+.results { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.results:empty { display: none; }
+.result {
+  text-align: left; border: 1px solid var(--line); background: var(--card); border-radius: 12px; padding: 10px 12px; cursor: pointer;
+}
+.result b { display: block; }
+.result small { display: block; font-size: 12px; color: var(--muted); }
+.geo-status { font-size: 12px; color: var(--muted); margin: 6px 4px 0; line-height: 1.6; }
+.link.small { font-size: 12px; min-width: 0; padding: 0 4px; }
+
 /* ---------- 底部表單 ---------- */
 #sheet { position: fixed; inset: 0; z-index: 50; pointer-events: none; }
 #sheet.open { pointer-events: auto; }

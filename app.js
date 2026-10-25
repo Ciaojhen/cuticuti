@@ -291,6 +291,9 @@ const ICONS = {
   settings: icon('<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>'),
   edit: icon('<path d="M21.17 6.81a1 1 0 0 0-3.98-3.98L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z"/><path d="m15 5 4 4"/>'),
   back: icon('<path d="m15 18-6-6 6-6"/>'),
+  map: icon('<path d="M14.1 5.55a2 2 0 0 0 1.8 0l3.65-1.83A1 1 0 0 1 21 4.62v12.76a1 1 0 0 1-.55.9l-4.55 2.27a2 2 0 0 1-1.8 0l-4.2-2.1a2 2 0 0 0-1.8 0l-3.65 1.83A1 1 0 0 1 3 19.38V6.62a1 1 0 0 1 .55-.9L8.1 3.45a2 2 0 0 1 1.8 0z"/><path d="M15 5.76v15"/><path d="M9 3.24v15"/>'),
+  sparkle: icon('<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 3v4"/><path d="M17 5h4"/>'),
+  search: icon('<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>'),
 };
 
 // Logo：小車的排氣管噴出「cuticuti」字樣的煙，字母一路往上飄、慢慢變淡
@@ -386,6 +389,7 @@ function renderTrip() {
   const on = $('.chip.on');
   if (on) on.parentElement.scrollLeft = on.offsetLeft - (on.parentElement.clientWidth - on.offsetWidth) / 2;
   hydratePhotos(app);
+  renderDayMap(t);
   const pf = $('#pack-form');
   if (pf) pf.onsubmit = async (e) => {
     e.preventDefault();
@@ -399,6 +403,21 @@ function renderTrip() {
 }
 
 /* ---- 行程 ---- */
+let showMap = store.get('show-map') === '1';
+let suggestion = null; // 建議順序的計算結果，等使用者按「套用」
+
+// 目前選的那天（或口袋名單）的行程，依時間排序
+function dayItems(t) {
+  const ds = tripDays(t);
+  return (ui.day === 'none' ? t.items.filter((i) => !ds.includes(i.date)) : t.items.filter((i) => i.date === ui.day)).slice().sort(byTime);
+}
+// 搜尋地點時優先找旅程附近：已定位行程的中心，沒有的話用目的地
+function nearPoint(t) {
+  const pts = t.items.filter((i) => i.geo).map((i) => i.geo);
+  if (pts.length) return { lat: pts.reduce((a, p) => a + p.lat, 0) / pts.length, lon: pts.reduce((a, p) => a + p.lon, 0) / pts.length };
+  return t.destGeo || null;
+}
+
 function planView(t) {
   const ds = tripDays(t);
   const unsched = t.items.filter((i) => !ds.includes(i.date));
@@ -409,7 +428,9 @@ function planView(t) {
       <b>Day ${n + 1}${d === today ? '・今天' : ''}</b><small>${fmtDay(d)}${cnt ? `・${cnt}` : ''}</small></button>`;
   }).join('') + `<button class="chip ${ui.day === 'none' ? 'on' : ''}" data-act="day" data-day="none"><b>💡 口袋名單</b><small>還沒排進哪天・${unsched.length}</small></button>`;
 
-  const list = (ui.day === 'none' ? unsched : t.items.filter((i) => i.date === ui.day)).slice().sort(byTime);
+  const list = dayItems(t);
+  const geoItems = list.filter((i) => i.geo);
+  const mode = MODES[t.mode] ? t.mode : 'walk';
   const row = (i) => {
     const c = CATS[i.cat] || CATS.other;
     const url = safeURL(i.url);
@@ -417,12 +438,15 @@ function planView(t) {
       i.cost !== '' && i.cost != null ? `💰 ${esc(t.currency)} ${fmtNum(i.cost)}` : '',
       url ? `<a href="${esc(url)}" target="_blank" rel="noopener">🔗 連結</a>` : '',
     ].filter(Boolean).join('');
+    const hb = hoursBadge(i);
+    const seq = showMap && i.geo ? geoItems.indexOf(i) + 1 : 0;
     return `<li class="item ${i.done ? 'done' : ''}" data-act="edit-item" data-id="${i.id}">
       <div class="time ${i.time ? '' : 'none'}">${i.time || '—'}</div>
-      <div class="dot">${c.icon}</div>
+      <div class="dot">${seq ? `<span class="pin small">${seq}</span>` : c.icon}</div>
       <div class="body">
         <div class="t">${esc(i.title)}</div>
         ${i.place ? `<a class="place" href="${mapURL(i.place)}" target="_blank" rel="noopener">📍 ${esc(i.place)}</a>` : ''}
+        ${hb ? `<div class="hours ${hb.warn ? 'bad' : ''}">🕘 ${esc(hb.text)}${hb.warn ? `・⚠️ ${hb.warn}` : ''}</div>` : ''}
         ${i.note ? `<p class="note">${esc(i.note)}</p>` : ''}
         ${meta ? `<div class="meta">${meta}</div>` : ''}
       </div>
@@ -432,7 +456,69 @@ function planView(t) {
   const empty = ui.day === 'none'
     ? `<div class="empty"><div class="big">💡</div><b>口袋名單是空的</b>想去但還沒決定哪天的地方，可以先放這裡</div>`
     : `<div class="empty"><div class="big">🗓️</div><b>這天還沒有安排</b>點「新增行程」開始排吧</div>`;
-  return `<div class="chips">${chips}</div>${list.length ? `<ol class="timeline">${list.map(row).join('')}</ol>` : empty}`;
+  const tools = list.length ? `<div class="plan-tools">
+      <button class="tool ${showMap ? 'on' : ''}" data-act="toggle-map">${ICONS.map}路線圖</button>
+      ${ui.day !== 'none' ? `<button class="tool" data-act="suggest-order">${ICONS.sparkle}建議順序</button>` : ''}
+      <button class="tool mode" data-act="cycle-mode" aria-label="切換交通方式">${MODES[mode].icon} ${MODES[mode].label}</button>
+    </div>` : '';
+  const mapCard = !showMap || !list.length ? ''
+    : geoItems.length ? `<div class="map-card"><div id="day-map"></div><div class="map-meta" id="map-meta"></div></div>`
+    : `<p class="hint map-empty">這天還沒有定位的地點。編輯行程時在「地點」按「搜尋」並選擇結果，就會出現在地圖上。</p>`;
+  return `<div class="chips">${chips}</div>${tools}${mapCard}${list.length ? `<ol class="timeline">${list.map(row).join('')}</ol>` : empty}`;
+}
+
+function renderDayMap(t) {
+  const el = $('#day-map');
+  if (!el) { if (dayMap) { dayMap.remove(); dayMap = null; } return; }
+  const geoItems = dayItems(t).filter((i) => i.geo);
+  const pts = geoItems.map((i, k) => ({ lat: i.geo.lat, lon: i.geo.lon, label: k + 1, title: i.title, done: i.done }));
+  const meta = (txt) => { const m = $('#map-meta'); if (m) m.textContent = txt; };
+  drawMap(el, pts, MODES[t.mode] ? t.mode : 'walk', ui.day !== 'none', meta).catch((err) => meta(friendly(err)));
+}
+
+async function suggestSheet(t) {
+  const list = dayItems(t);
+  const geo = list.filter((i) => i.geo);
+  if (geo.length < 2) return toast('至少要有 2 個已定位的地點才能建議順序：編輯行程 → 地點 → 搜尋', 4500);
+  const mode = MODES[t.mode] ? t.mode : 'walk';
+  toast('計算路線中…');
+  const matrix = await travelMatrix(geo.map((i) => i.geo), mode);
+  const times = geo.filter((i) => i.time).map((i) => toMin(i.time));
+  const start = times.length ? Math.min(...times) : 9 * 60;
+  const fixFirst = geo[0].cat === 'stay';
+  const now = simulate(geo.map((_, k) => k), geo, matrix, start, ui.day);
+  const best = suggestOrder(geo, matrix, start, ui.day, fixFirst);
+  suggestion = { trip: t, best };
+  const same = best.order.every((v, k) => v === k);
+  const skipped = list.filter((i) => !i.geo);
+  const nowWarn = now.stops.filter((x) => x.warn).length;
+  openSheet(`<div>
+    <div class="sheet-head"><button class="link" data-act="close-sheet">取消</button><b>建議順序</b><button class="link strong" data-act="apply-order">套用</button></div>
+    <p class="hint">${MODES[mode].icon} ${MODES[mode].label}・${fmtMin(start)} 出發${fixFirst ? '・從住宿出發' : ''}<br>
+      ${same ? '目前的順序已經是最順的了 👍' : `移動時間：目前 ${fmtDuration(now.travel)} → 建議 <b>${fmtDuration(best.travel)}</b>`}
+      ${nowWarn ? `<br>目前的順序有 ${nowWarn} 個地點會碰到沒開門` : ''}</p>
+    <ol class="sugg">${best.stops.map((x, k) => {
+      const h = hoursFor(x.item, ui.day);
+      const move = k ? `<div class="leg">${MODES[mode].icon} ${fmtDuration(matrix[best.order[k - 1]][best.order[k]])}</div>` : '';
+      return `${move}<li><span class="pin">${k + 1}</span><div>
+        <b>${esc(x.item.title)}</b>
+        <small>${fmtMin(x.arrive)} 抵達・停留 ${fmtDuration(stayOf(x.item))}${h ? `・營業 ${fmtRanges(h)}` : ''}</small>
+        ${x.warn ? `<small class="bad">⚠️ ${x.warn}</small>` : ''}</div></li>`;
+    }).join('')}</ol>
+    ${skipped.length ? `<p class="hint">沒有定位、不參與排序：${skipped.map((i) => esc(i.title)).join('、')}</p>` : ''}
+    <p class="hint">按「套用」會把這些地點的時間改成建議的抵達時間。停留時間可以在每個行程裡調整。${mode === 'transit' ? '大眾運輸的移動時間是用距離估算的，僅供參考。' : ''}</p>
+  </div>`);
+}
+
+async function applySuggestion() {
+  if (!suggestion) return;
+  const { trip, best } = suggestion;
+  best.stops.forEach((x) => { x.item.time = fmtMin(Math.round(x.arrive / 5) * 5); });
+  suggestion = null;
+  await saveTrip(trip);
+  await closeSheet();
+  renderTrip();
+  toast('已套用建議的順序 ✨');
 }
 
 /* ---- 日記 ---- */
@@ -524,8 +610,9 @@ function tripForm(t) {
     </div>
     <div class="row">
       <label class="field"><span>幣別</span><input name="currency" value="${esc(d.currency)}" placeholder="TWD / JPY"></label>
-      <div class="field"><span>顏色</span><div class="pick colors" style="margin:0">${COLORS.map((c) => `<label><input type="radio" name="color" value="${c}" ${d.color === c ? 'checked' : ''}><span style="--sw:${c}"></span></label>`).join('')}</div></div>
+      <label class="field"><span>交通方式</span><select name="mode">${Object.entries(MODES).map(([k, m]) => `<option value="${k}" ${(d.mode || 'walk') === k ? 'selected' : ''}>${m.icon} ${m.label}</option>`).join('')}</select></label>
     </div>
+    <div class="field"><span>顏色</span><div class="pick colors" style="margin:0">${COLORS.map((c) => `<label><input type="radio" name="color" value="${c}" ${d.color === c ? 'checked' : ''}><span style="--sw:${c}"></span></label>`).join('')}</div></div>
     <p class="hint">日期還沒決定也沒關係，可以先建立旅程，把想去的地方放進「口袋名單」。</p>
     ${isNew ? '' : `<button type="button" class="btn ghost" data-act="share-trip">📤 分享行程（文字）</button>
     <button type="button" class="danger" data-act="del-trip">刪除這趟旅程</button>`}
@@ -537,7 +624,9 @@ function tripForm(t) {
       if (v.start && v.end && v.end < v.start) return toast('回程日不能早於出發日');
       if (!v.start) v.end = '';
       const trip = t || { id: uid(), items: [], journal: {}, packing: [], createdAt: Date.now() };
+      if (trip.dest !== v.dest.trim()) delete trip.destGeo;
       Object.assign(trip, {
+        mode: v.mode,
         name: v.name.trim(), dest: v.dest.trim(), start: v.start, end: v.end || v.start,
         emoji: v.emoji, color: v.color, currency: v.currency.trim() || 'TWD',
       });
@@ -564,21 +653,82 @@ function itemForm(t, item) {
       </select></label>
       <label class="field"><span>時間</span><input type="time" name="time" value="${esc(d.time)}"></label>
     </div>
-    <label class="field"><span>地點（可直接開 Google 地圖）</span><input name="place" value="${esc(d.place)}" placeholder="地名或地址"></label>
+    <div class="field"><span>地點</span>
+      <div class="search-row">
+        <input name="place" value="${esc(d.place)}" placeholder="地名或地址" enterkeyhint="search">
+        <button type="button" class="search-btn" id="place-search">${ICONS.search}搜尋</button>
+      </div>
+      <div class="results" id="place-results"></div>
+      <p class="geo-status" id="geo-status"></p>
+    </div>
+    <div class="row">
+      <label class="field"><span>開門</span><input type="time" name="open" value="${esc(d.open)}"></label>
+      <label class="field"><span>關門</span><input type="time" name="close" value="${esc(d.close)}"></label>
+    </div>
+    <label class="field"><span>預計停留</span><select name="stay">
+      <option value="">自動（依類別）</option>
+      ${[30, 60, 90, 120, 180, 240].map((m) => `<option value="${m}" ${Number(d.stay) === m && d.stay !== '' ? 'selected' : ''}>${fmtDuration(m)}</option>`).join('')}
+    </select></label>
     <div class="row">
       <label class="field"><span>花費（${esc(t.currency)}）</span><input type="number" name="cost" inputmode="decimal" step="any" min="0" value="${esc(d.cost)}" placeholder="0"></label>
       <label class="field"><span>相關連結</span><input type="url" name="url" value="${esc(d.url)}" placeholder="訂位 / 票券網址"></label>
     </div>
-    <label class="field"><span>備註</span><textarea name="note" rows="3" placeholder="訂位代號、營業時間、必點…">${esc(d.note)}</textarea></label>
+    <label class="field"><span>備註</span><textarea name="note" rows="3" placeholder="訂位代號、必點、注意事項…">${esc(d.note)}</textarea></label>
     ${isNew ? '' : `<button type="button" class="danger" data-act="del-item" data-id="${item.id}">刪除這個行程</button>`}
   </form>`, (panel) => {
-    $('#f', panel).onsubmit = async (e) => {
+    const form = $('#f', panel);
+    let geo = d.geo || null;
+    let osmHours = d.osmHours || '';
+    const results = $('#place-results', panel);
+    const showStatus = () => {
+      const el = $('#geo-status', panel);
+      if (!geo) { el.textContent = '按「搜尋」找到位置後，就能顯示在路線圖上，也會自動帶入營業時間。'; return; }
+      el.innerHTML = `📍 已定位 <button type="button" class="link small" id="geo-clear">清除</button><br>${osmHours
+        ? `營業時間（OpenStreetMap）：${esc(describeHours(osmHours))}<br>與實際可能不同，需要的話可以在下面自己填。`
+        : 'OpenStreetMap 沒有這裡的營業時間，可以在下面自己填。'}`;
+      $('#geo-clear', panel).onclick = () => { geo = null; osmHours = ''; showStatus(); };
+    };
+    showStatus();
+    const doSearch = async () => {
+      const q = form.place.value.trim() || form.title.value.trim();
+      if (!q) return toast('先輸入地點名稱');
+      results.innerHTML = '<p class="hint">搜尋中…</p>';
+      try {
+        let near = nearPoint(t);
+        if (!near && t.dest) {
+          const r = await searchPlaces(t.dest);
+          if (r[0]) { near = t.destGeo = { lat: r[0].lat, lon: r[0].lon }; saveTrip(t); }
+        }
+        const list = await searchPlaces(q, near);
+        results.innerHTML = list.length
+          ? list.map((r, k) => `<button type="button" class="result" data-k="${k}"><b>${esc(r.name)}</b><small>${esc(r.address)}</small>${r.hours ? '<small>🕘 有營業時間</small>' : ''}</button>`).join('')
+          : '<p class="hint">找不到這個地點。可以試試當地語言（例如日文漢字）、英文，或加上城市名稱。</p>';
+        results.onclick = (ev) => {
+          const b = ev.target.closest('.result');
+          if (!b) return;
+          const r = list[b.dataset.k];
+          geo = { lat: r.lat, lon: r.lon };
+          osmHours = r.hours;
+          form.place.value = r.name;
+          if (!form.title.value.trim()) form.title.value = r.name;
+          results.innerHTML = '';
+          showStatus();
+        };
+      } catch (err) {
+        results.innerHTML = `<p class="hint">搜尋失敗：${esc(friendly(err))}</p>`;
+      }
+    };
+    $('#place-search', panel).onclick = doSearch;
+    form.place.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); doSearch(); } });
+    form.onsubmit = async (e) => {
       e.preventDefault();
       const v = Object.fromEntries(new FormData(e.target));
+      if (Boolean(v.open) !== Boolean(v.close)) return toast('開門和關門時間要一起填');
       const it = item || { id: uid(), done: false };
       Object.assign(it, {
         cat: v.cat, title: v.title.trim(), date: v.date, time: v.time, place: v.place.trim(),
         cost: v.cost === '' ? '' : Number(v.cost), url: v.url.trim(), note: v.note.trim(),
+        geo, osmHours, open: v.open, close: v.close, stay: v.stay === '' ? '' : Number(v.stay),
       });
       if (isNew) t.items.push(it);
       await saveTrip(t);
@@ -820,6 +970,19 @@ document.addEventListener('click', async (e) => {
       await closeSheet();
       return renderTrip();
     case 'edit-journal': return journalSheet(t, el.dataset.day);
+    case 'toggle-map':
+      showMap = !showMap;
+      store.set('show-map', showMap ? '1' : '');
+      return renderTrip();
+    case 'cycle-mode': {
+      const keys = Object.keys(MODES);
+      t.mode = keys[(keys.indexOf(MODES[t.mode] ? t.mode : 'walk') + 1) % keys.length];
+      await saveTrip(t);
+      toast(`交通方式：${MODES[t.mode].label}`);
+      return renderTrip();
+    }
+    case 'suggest-order': return suggestSheet(t);
+    case 'apply-order': return applySuggestion();
     case 'view-photo': e.stopPropagation(); if (el.src) viewPhoto(el.src); return;
     case 'toggle-pack': {
       const p = t.packing.find((x) => x.id === id);
