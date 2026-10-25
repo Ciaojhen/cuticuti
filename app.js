@@ -292,6 +292,7 @@ const ICONS = {
   settings: icon('<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>'),
   edit: icon('<path d="M21.17 6.81a1 1 0 0 0-3.98-3.98L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z"/><path d="m15 5 4 4"/>'),
   back: icon('<path d="m15 18-6-6 6-6"/>'),
+  grip: icon('<circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/>'),
   clock: icon('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
   map: icon('<path d="M14.1 5.55a2 2 0 0 0 1.8 0l3.65-1.83A1 1 0 0 1 21 4.62v12.76a1 1 0 0 1-.55.9l-4.55 2.27a2 2 0 0 1-1.8 0l-4.2-2.1a2 2 0 0 0-1.8 0l-3.65 1.83A1 1 0 0 1 3 19.38V6.62a1 1 0 0 1 .55-.9L8.1 3.45a2 2 0 0 1 1.8 0z"/><path d="M15 5.76v15"/><path d="M9 3.24v15"/>'),
   sparkle: icon('<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 3v4"/><path d="M17 5h4"/>'),
@@ -469,6 +470,7 @@ function planView(t) {
         ${meta ? `<div class="meta">${meta}</div>` : ''}
       </div>
       <button class="check" data-act="toggle-item" data-id="${i.id}" aria-label="${i.done ? '標記未完成' : '標記完成'}">${i.done ? '✓' : ''}</button>
+      <span class="grip" data-act="grip" aria-label="按住拖拉改變順序">${ICONS.grip}</span>
     </li>`;
   };
   const empty = ui.day === 'none'
@@ -1071,6 +1073,7 @@ document.addEventListener('click', async (e) => {
     case 'day': ui.day = el.dataset.day; return renderTrip();
     case 'new-item': return itemForm(t);
     case 'edit-item': return itemForm(t, t.items.find((i) => i.id === id));
+    case 'grip': return; // 把手只用來拖拉，不要打開編輯
     case 'toggle-item': {
       e.stopPropagation();
       const it = t.items.find((i) => i.id === id);
@@ -1133,6 +1136,66 @@ document.addEventListener('click', async (e) => {
       return renderTrip();
   }
 });
+
+/* ============ 拖拉改變順序 ============
+ * 按住卡片右邊的把手上下拖。行程依時間排列，所以放開後「時間跟著位置交換」：
+ * 原本的時間點不變，依新的順序重新分配（沒有時間的行程排在最後）。 */
+let drag = null;
+document.addEventListener('pointerdown', (e) => {
+  const grip = e.target.closest('.grip');
+  if (!grip || !current) return;
+  e.preventDefault();
+  const li = grip.closest('.item');
+  const items = [...li.parentElement.children];
+  const from = items.indexOf(li);
+  const rects = items.map((x) => { const r = x.getBoundingClientRect(); return { top: r.top + window.scrollY, h: r.height }; });
+  const step = items.length > 1 ? rects[1].top - rects[0].top : rects[0].h + 10;
+  drag = { li, items, from, to: from, startY: e.pageY, rects, step };
+  li.classList.add('dragging');
+  li.parentElement.classList.add('sorting');
+  try { grip.setPointerCapture(e.pointerId); } catch { /* 部分瀏覽器不支援，拖拉一樣可以運作 */ }
+});
+document.addEventListener('pointermove', (e) => {
+  if (!drag) return;
+  const dy = e.pageY - drag.startY;
+  drag.li.style.transform = `translateY(${dy}px)`;
+  const center = drag.rects[drag.from].top + drag.rects[drag.from].h / 2 + dy;
+  let to = drag.from;
+  drag.rects.forEach((r, k) => {
+    // 拖過相鄰卡片的四成就換位置，手感比較靈敏
+    if (k < drag.from && center < r.top + r.h * 0.6) to = Math.min(to, k);
+    if (k > drag.from && center > r.top + r.h * 0.4) to = Math.max(to, k);
+  });
+  drag.to = to;
+  drag.items.forEach((x, k) => {
+    if (x === drag.li) return;
+    const shift = k > drag.from && k <= to ? -drag.step : k < drag.from && k >= to ? drag.step : 0;
+    x.style.transform = shift ? `translateY(${shift}px)` : '';
+  });
+  // 拖到畫面上下邊緣時自動捲動
+  if (e.clientY < 150) window.scrollBy(0, -12);
+  else if (e.clientY > window.innerHeight - 90) window.scrollBy(0, 12);
+});
+const endDrag = async () => {
+  if (!drag) return;
+  const { from, to, items } = drag;
+  drag = null;
+  items.forEach((x) => { x.style.transform = ''; x.classList.remove('dragging'); });
+  items[0]?.parentElement.classList.remove('sorting');
+  if (from === to) return;
+  const t = current;
+  const list = dayItems(t);
+  const slots = list.map((i) => i.time || ''); // 已依時間排好，沒有時間的在最後
+  const [moved] = list.splice(from, 1);
+  list.splice(to, 0, moved);
+  list.forEach((it, k) => { it.time = slots[k]; });
+  const ids = new Set(list.map((i) => i.id));
+  t.items = [...t.items.filter((i) => !ids.has(i.id)), ...list]; // 同時間（或沒時間）的行程，依這個順序排
+  await saveTrip(t);
+  renderTrip();
+};
+document.addEventListener('pointerup', endDrag);
+document.addEventListener('pointercancel', endDrag);
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {

@@ -126,8 +126,8 @@ a { color: inherit; }
 /* ---------- 行程項目 ---------- */
 .timeline { list-style: none; margin: 4px 0; padding: 0; }
 .item {
-  display: grid; grid-template-columns: 46px 34px 1fr 32px; gap: 8px; align-items: start;
-  padding: 12px 10px 12px 12px; margin-bottom: 10px;
+  display: grid; grid-template-columns: 46px 34px minmax(0, 1fr) 28px 18px; gap: 8px; align-items: start;
+  padding: 12px 8px 12px 12px; margin-bottom: 10px;
   background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); cursor: pointer;
 }
 .item .time { font-size: 13px; font-weight: 700; padding-top: 6px; font-variant-numeric: tabular-nums; }
@@ -146,6 +146,14 @@ a { color: inherit; }
   border: 2px solid var(--line); background: none; color: #fff; font-weight: 800; font-size: 14px; cursor: pointer; padding: 0;
 }
 .item.done .check { background: var(--ok); border-color: var(--ok); }
+.grip {
+  display: grid; place-items: center; width: 18px; height: 34px; color: var(--muted); opacity: .6;
+  cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none;
+}
+.grip svg { width: 18px; height: 18px; fill: currentColor; }
+.sorting .item { transition: transform .15s ease; }
+.item.dragging { position: relative; z-index: 5; transition: none; cursor: grabbing; box-shadow: 0 10px 28px rgba(0, 0, 0, .18); }
+.item.dragging .grip { opacity: 1; color: var(--accent); }
 .item.flash { animation: item-flash 1.6s ease-out; }
 @keyframes item-flash {
   0%, 30% { box-shadow: 0 0 0 3px var(--accent); background: var(--accent-soft); }
