@@ -441,3 +441,27 @@ button.dot { border: 0; padding: 0; cursor: pointer; }
 details.code { margin-top: 12px; }
 details.code summary { font-size: 13px; color: var(--muted); cursor: pointer; padding: 4px; }
 details.code textarea { font: 11px/1.4 ui-monospace, Menlo, monospace; margin-top: 6px; }
+
+/* ---------- 今天模式：下一站 ---------- */
+.next-stop {
+  display: flex; align-items: center; gap: 12px; margin: 2px 0 12px; padding: 14px 14px 14px 16px;
+  border-radius: var(--radius); background: var(--accent); color: #fff;
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.next-stop.done { flex-direction: column; align-items: flex-start; gap: 2px; background: var(--ok); box-shadow: none; }
+.ns-text { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.35; }
+.next-stop small { font-size: 12px; opacity: .85; }
+.ns-label { font-size: 12px; font-weight: 700; opacity: .9; }
+.ns-text b { font-size: 19px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ns-text em { font-style: normal; font-size: 13px; opacity: .95; }
+.ns-nav {
+  flex: none; padding: 10px 16px; border-radius: 99px; background: #fff; color: var(--accent);
+  font-weight: 800; text-decoration: none; font-size: 15px;
+}
+.item.is-next { box-shadow: 0 0 0 2px var(--accent), var(--shadow); }
+.home-next { margin: 6px 0 0 !important; font-size: 13px !important; color: var(--ok-text) !important; font-weight: 600; }
+
+/* ---------- 天氣、台幣換算 ---------- */
+.weather { font-size: 13px; color: var(--muted); margin: -2px 4px 10px; }
+.meta .home { color: var(--muted); opacity: .85; }
+.total-home { display: block; font-size: 15px; font-weight: 600; opacity: .95; margin: -2px 0 2px; }

@@ -355,6 +355,7 @@ function renderHome() {
         <h3>${esc(t.name)}</h3>
         <p>${t.start ? `${t.dest ? esc(t.dest) + '・' : ''}${fmtRange(t)}` : esc(t.dest || '還沒填目的地')}</p>
         ${t.start ? `<span class="pill ${st.kind}">${st.label}</span>` : ''}<span class="count">${t.items.length} 個行程</span>
+        ${st.kind === 'now' && todayStops(t).next ? `<p class="home-next">下一站：${esc(todayStops(t).next.title)}・${todayStops(t).next.time}</p>` : ''}
       </div>
     </a>`;
   };
@@ -397,6 +398,9 @@ function renderTrip() {
   if (on) on.parentElement.scrollLeft = on.offsetLeft - (on.parentElement.clientWidth - on.offsetWidth) / 2;
   hydratePhotos(app);
   renderDayMap(t);
+  const refresh = (changed) => { if (changed && current === t && !drag && !isEditing()) renderTrip(); };
+  ensureRate(currencyCode(t.currency)).then(refresh);
+  if (ui.tab === 'plan') ensureWeather(t).then(refresh);
   const pf = $('#pack-form');
   if (pf) pf.onsubmit = async (e) => {
     e.preventDefault();
@@ -431,6 +435,44 @@ function nearPoint(t) {
   return t.destGeo || null;
 }
 
+/* ---- 今天模式：旅行中顯示「下一站」 ---- */
+const nowMin = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); };
+// 今天正在進行的行程和下一個行程（依時間）
+function todayStops(t) {
+  const list = t.items.filter((i) => i.date === todayISO() && i.time).sort(byTime);
+  const n = nowMin();
+  const next = list.find((i) => toMin(i.time) > n) || null;
+  const now = [...list].reverse().find((i) => toMin(i.time) <= n && n < toMin(i.time) + Math.max(stayOf(i), 1)) || null;
+  return { now, next, total: list.length };
+}
+function directionsURL(t, i) {
+  const addr = i.address || (i.place && looksLikeAddress(i.place) ? i.place : '');
+  const q = addr ? `${i.place && i.place !== addr ? i.place : i.title} ${addr}` : i.place || i.title;
+  const mode = { walk: 'walking', drive: 'driving', transit: 'transit' }[dayMode(t, i.date)];
+  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(q)}&travelmode=${mode}`;
+}
+function nextStopHTML(t) {
+  if (ui.day !== todayISO()) return '<div id="next-stop" hidden></div>';
+  const { now, next, total } = todayStops(t);
+  if (!total) return '<div id="next-stop" hidden></div>';
+  if (!next) return `<div id="next-stop" class="next-stop done">${now ? `<small>現在・${esc(now.title)}</small>` : ''}<b>今天的行程都走完了 🎉</b></div>`;
+  const left = toMin(next.time) - nowMin();
+  return `<div id="next-stop" class="next-stop">
+    <div class="ns-text">
+      ${now ? `<small>現在・${esc(now.title)}</small>` : ''}
+      <span class="ns-label">下一站</span>
+      <b>${esc(next.title)}</b>
+      <em>${next.time}・還有 ${fmtDuration(left)}</em>
+    </div>
+    <a class="ns-nav" href="${directionsURL(t, next)}" target="_blank" rel="noopener">導航</a>
+  </div>`;
+}
+// 停在今天的行程頁時，每分鐘更新一次「下一站」
+setInterval(() => {
+  const el = $('#next-stop');
+  if (el && current && !drag && document.visibilityState === 'visible') el.outerHTML = nextStopHTML(current);
+}, 60000);
+
 function planView(t) {
   const ds = tripDays(t);
   const unsched = t.items.filter((i) => !ds.includes(i.date));
@@ -438,12 +480,13 @@ function planView(t) {
   const chips = ds.map((d, n) => {
     const cnt = t.items.filter((i) => i.date === d).length;
     return `<button class="chip ${ui.day === d ? 'on' : ''} ${d === today ? 'today' : ''}" data-act="day" data-day="${d}">
-      <b>Day ${n + 1}${d === today ? '・今天' : ''}</b><small>${fmtDay(d)}${cnt ? `・${cnt}` : ''}${dayMode(t, d) !== dayMode(t, '') ? ` ${MODES[dayMode(t, d)].icon}` : ''}</small></button>`;
+      <b>Day ${n + 1}${d === today ? '・今天' : ''}</b><small>${fmtDay(d)}${cnt ? `・${cnt}` : ''}${dayMode(t, d) !== dayMode(t, '') ? ` ${MODES[dayMode(t, d)].icon}` : ''}${dayWeather(t, d) ? ` ${dayWeather(t, d).icon}` : ''}</small></button>`;
   }).join('') + `<button class="chip ${ui.day === 'none' ? 'on' : ''}" data-act="day" data-day="none"><b>💡 口袋名單</b><small>還沒排進哪天・${unsched.length}</small></button>`;
 
   const list = dayItems(t);
   const geoItems = list.filter((i) => i.geo);
   const mode = dayMode(t, ui.day);
+  const nextId = ui.day === todayISO() ? todayStops(t).next?.id : null;
   const row = (i) => {
     const c = CATS[i.cat] || CATS.other;
     const url = safeURL(i.url);
@@ -453,13 +496,13 @@ function planView(t) {
     const mapQuery = addr ? `${(showPlace && i.place) || i.title} ${addr}` : i.place;
     const mapHref = mapQuery ? mapURL(mapQuery) : '';
     const meta = [
-      i.cost !== '' && i.cost != null ? `💰 ${esc(t.currency)} ${fmtNum(i.cost)}` : '',
+      i.cost !== '' && i.cost != null ? `💰 ${esc(t.currency)} ${fmtNum(i.cost)}${toHome(i.cost, t.currency) ? ` <span class="home">${toHome(i.cost, t.currency)}</span>` : ''}` : '',
       url ? `<a href="${esc(url)}" target="_blank" rel="noopener">🔗 連結</a>` : '',
       mapHref && !showPlace ? `<a href="${mapHref}" target="_blank" rel="noopener">📍 地圖</a>` : '',
     ].filter(Boolean).join('');
     const hb = hoursBadge(i);
     const seq = showMap && i.geo ? geoItems.indexOf(i) + 1 : 0;
-    return `<li class="item ${i.done ? 'done' : ''}" data-act="edit-item" data-id="${i.id}">
+    return `<li class="item ${i.done ? 'done' : ''} ${i.id === nextId ? 'is-next' : ''}" data-act="edit-item" data-id="${i.id}">
       <div class="time ${i.time ? '' : 'none'}">${i.time || '—'}</div>
       ${seq ? `<button type="button" class="dot" data-act="focus-pin" data-seq="${seq}" aria-label="在地圖上看第 ${seq} 個地點"><span class="pin small">${seq}</span></button>` : `<div class="dot">${c.icon}</div>`}
       <div class="body">
@@ -484,7 +527,9 @@ function planView(t) {
   const mapCard = !showMap || !list.length ? ''
     : geoItems.length ? `<div class="map-card"><div id="day-map"></div><button type="button" class="map-all" data-act="map-all">全部</button><div class="map-meta" id="map-meta"></div></div>`
     : `<p class="hint map-empty">這天還沒有定位的地點。編輯行程時在「地址」貼上地址按「搜尋」（或直接用地點名稱搜尋），就會出現在地圖上。</p>`;
-  return `<div class="chips">${chips}</div>${tools}${mapCard}${list.length ? `<ol class="timeline">${list.map(row).join('')}</ol>` : empty}`;
+  const wx = ui.day !== 'none' && dayWeather(t, ui.day);
+  const weather = wx ? `<div class="weather">${wx.icon} ${wx.label} ${Math.round(wx.max)}° / ${Math.round(wx.min)}°${wx.rain != null ? `・降雨 ${wx.rain}%` : ''}</div>` : '';
+  return `<div class="chips">${chips}</div>${nextStopHTML(t)}${weather}${tools}${mapCard}${list.length ? `<ol class="timeline">${list.map(row).join('')}</ol>` : empty}`;
 }
 
 function renderDayMap(t) {
@@ -605,7 +650,8 @@ function budgetView(t) {
   const max = Math.max(...byCat.map((x) => x[1]), ...byDay.map((x) => x[1]), 1);
   const bars = (rows) => rows.map(([l, v]) => `<div class="bar-row"><span>${l}</span><div class="meter"><i style="width:${(v / max) * 100}%"></i></div><span class="v">${fmtNum(v)}</span></div>`).join('');
   return `
-    <div class="total"><small>總花費（${esc(t.currency)}）</small><b>${fmtNum(total)}</b><small>${ds.length > 1 ? `平均每天 ${fmtNum(total / ds.length)}` : ''}</small></div>
+    <div class="total"><small>總花費（${esc(t.currency)}）</small><b>${fmtNum(total)}</b>${toHome(total, t.currency) ? `<span class="total-home">${toHome(total, t.currency)}</span>` : ''}<small>${ds.length > 1 ? `平均每天 ${fmtNum(Math.round(total / ds.length))}${toHome(total / ds.length, t.currency) ? `（${toHome(total / ds.length, t.currency)}）` : ''}` : ''}</small></div>
+    ${rates[currencyCode(t.currency)] ? `<p class="hint">匯率 1 ${esc(currencyCode(t.currency))} ≈ ${rates[currencyCode(t.currency)].rate.toFixed(4)} TWD（${rates[currencyCode(t.currency)].date}）</p>` : ''}
     <h2 class="section">依類別</h2><div class="list">${bars(byCat.map(([c, v]) => [`${c.icon} ${c.label}`, v]))}</div>
     <h2 class="section">依日期</h2><div class="list">${bars(byDay)}</div>`;
 }
