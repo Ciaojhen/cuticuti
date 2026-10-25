@@ -338,17 +338,20 @@ function route() {
 
 function renderHome() {
   document.title = 'CutiCuti';
-  const sorted = [...trips].sort((a, b) => (a.start || '9999').localeCompare(b.start || '9999'));
-  const active = sorted.filter((t) => tripStatus(t).kind !== 'past');
-  const past = sorted.filter((t) => tripStatus(t).kind === 'past').reverse();
+  // 分三區：已定日期（依出發日）、還沒決定日期（新建的在前）、已結束（最近的在前）
+  const dated = trips.filter((t) => t.start).sort((a, b) => a.start.localeCompare(b.start));
+  const upcoming = dated.filter((t) => tripStatus(t).kind !== 'past');
+  const past = dated.filter((t) => tripStatus(t).kind === 'past').reverse();
+  const undated = trips.filter((t) => !t.start).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const section = (title, list) => (list.length ? `<h2 class="section">${title}</h2>${list.map(card).join('')}` : '');
   const card = (t) => {
     const st = tripStatus(t);
     return `<a class="trip-card" href="#/trip/${t.id}" style="--c:${esc(t.color)}">
       <div class="em">${esc(t.emoji)}</div>
       <div class="info">
         <h3>${esc(t.name)}</h3>
-        <p>${t.dest ? esc(t.dest) + '・' : ''}${fmtRange(t)}</p>
-        <span class="pill ${st.kind}">${st.label}</span><span class="count">${t.items.length} 個行程</span>
+        <p>${t.start ? `${t.dest ? esc(t.dest) + '・' : ''}${fmtRange(t)}` : esc(t.dest || '還沒填目的地')}</p>
+        ${t.start ? `<span class="pill ${st.kind}">${st.label}</span>` : ''}<span class="count">${t.items.length} 個行程</span>
       </div>
     </a>`;
   };
@@ -359,8 +362,9 @@ function renderHome() {
     </div></header>
     <main class="page">
       ${trips.length ? '' : `<div class="empty"><div class="big">🧳</div><b>還沒有旅程</b>按右下角新增第一趟旅行吧！</div>`}
-      ${active.length ? `<h2 class="section">接下來的旅程</h2>${active.map(card).join('')}` : ''}
-      ${past.length ? `<h2 class="section">旅行回憶</h2>${past.map(card).join('')}` : ''}
+      ${section('接下來的旅程', upcoming)}
+      ${section('還沒決定日期', undated)}
+      ${section('旅行回憶', past)}
     </main>
     <button class="fab" data-act="new-trip">＋ 新旅程</button>`;
 }

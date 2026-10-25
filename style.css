@@ -93,7 +93,8 @@ a { color: inherit; }
 .pill { display: inline-block; font-size: 12px; padding: 2px 9px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 .pill.now { background: var(--ok-soft); color: var(--ok-text); }
 .pill.past, .pill.idea { background: var(--line); color: var(--muted); }
-.trip-card .count { font-size: 12px; color: var(--muted); margin-left: 6px; }
+.trip-card .count { font-size: 12px; color: var(--muted); }
+.trip-card .pill + .count { margin-left: 6px; }
 
 .fab {
   position: fixed; right: 16px; bottom: calc(env(safe-area-inset-bottom) + 20px); z-index: 20;
