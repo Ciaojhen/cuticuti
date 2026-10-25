@@ -435,9 +435,14 @@ function planView(t) {
   const row = (i) => {
     const c = CATS[i.cat] || CATS.other;
     const url = safeURL(i.url);
+    // 卡片以名稱為主：地點是地址、或跟名稱一樣時不另外顯示，只留一個「地圖」連結
+    const isAddr = i.place && looksLikeAddress(i.place);
+    const showPlace = i.place && !isAddr && i.place !== i.title;
+    const mapHref = i.place ? mapURL(isAddr && i.title ? `${i.title} ${i.place}` : i.place) : '';
     const meta = [
       i.cost !== '' && i.cost != null ? `💰 ${esc(t.currency)} ${fmtNum(i.cost)}` : '',
       url ? `<a href="${esc(url)}" target="_blank" rel="noopener">🔗 連結</a>` : '',
+      i.place && !showPlace ? `<a href="${mapHref}" target="_blank" rel="noopener">📍 地圖</a>` : '',
     ].filter(Boolean).join('');
     const hb = hoursBadge(i);
     return `<li class="item ${i.done ? 'done' : ''}" data-act="edit-item" data-id="${i.id}">
@@ -445,7 +450,7 @@ function planView(t) {
       <div class="dot">${c.icon}</div>
       <div class="body">
         <div class="t">${esc(i.title)}</div>
-        ${i.place ? `<a class="place" href="${mapURL(i.title && looksLikeAddress(i.place) ? `${i.title} ${i.place}` : i.place)}" target="_blank" rel="noopener">📍 ${esc(shortPlace(i.place))}</a>` : ''}
+        ${showPlace ? `<a class="place" href="${mapHref}" target="_blank" rel="noopener">📍 ${esc(i.place)}</a>` : ''}
         ${hb ? `<div class="hours ${hb.bad ? 'bad' : ''}">${ICONS.clock}<span class="hours-text">${hb.text.split('／').map((x) => `<span>${esc(x)}</span>`).join('／')}</span></div>` : ''}
         ${i.note ? `<p class="note">${esc(i.note)}</p>` : ''}
         ${meta ? `<div class="meta">${meta}</div>` : ''}
@@ -641,7 +646,7 @@ function itemForm(t, item) {
   openSheet(`<form id="f" autocomplete="off">
     ${head(isNew ? '新增行程' : '編輯行程')}
     <div class="pick cats">${Object.entries(CATS).map(([k, c]) => `<label><input type="radio" name="cat" value="${k}" ${d.cat === k ? 'checked' : ''}><span>${c.icon}<small>${c.label}</small></span></label>`).join('')}</div>
-    <label class="field"><span>要做什麼</span><input name="title" required value="${esc(d.title)}" placeholder="例如：清水寺、一蘭拉麵、新幹線"></label>
+    <label class="field"><span>名稱</span><input name="title" required value="${esc(d.title)}" placeholder="例如：清水寺、一蘭拉麵、新幹線"></label>
     <div class="row">
       <label class="field"><span>哪一天</span><select name="date">
         <option value="">💡 口袋名單</option>
@@ -649,7 +654,7 @@ function itemForm(t, item) {
       </select></label>
       <label class="field"><span>時間</span><input type="time" name="time" value="${esc(d.time)}"></label>
     </div>
-    <div class="field"><span>地點</span>
+    <div class="field"><span>地點／地址（用來定位和建議順序）</span>
       <div class="search-row">
         <input name="place" value="${esc(d.place)}" placeholder="店名、地名，或貼上地址" enterkeyhint="search">
         <button type="button" class="search-btn" id="place-search">${ICONS.search}搜尋</button>
@@ -934,7 +939,7 @@ async function importData(file) {
 
 async function shareTrip(t) {
   const ds = tripDays(t);
-  const line = (i) => `${i.time ? i.time + ' ' : ''}${(CATS[i.cat] || CATS.other).icon} ${i.title}${i.place ? `（${i.place}）` : ''}`;
+  const line = (i) => `${i.time ? i.time + ' ' : ''}${(CATS[i.cat] || CATS.other).icon} ${i.title}${i.place && i.place !== i.title ? `（${shortPlace(i.place)}）` : ''}`;
   let text = `${t.emoji} ${t.name}\n${t.dest ? t.dest + '・' : ''}${fmtRange(t)}\n`;
   ds.forEach((d, n) => {
     const list = t.items.filter((i) => i.date === d).sort(byTime);
