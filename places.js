@@ -67,12 +67,6 @@ const looksLikeAddress = (s) => {
     || /[市縣].{1,4}[區鄉鎮].*[路街段道]/.test(t); // 台灣：市＋區＋路
 };
 
-// 卡片上顯示用：去掉國家、郵遞區號、都道府縣，讓地址短一點
-function shortPlace(s) {
-  if (!looksLikeAddress(s)) return s;
-  return s.replace(/^(日本|台灣|臺灣)[、,\s]*/, '').replace(/〒?\s*\d{3}-?\d{4}\s*/, '').replace(/^\d{3,6}(?=\D)/, '').replace(PREFECTURE, '').trim();
-}
-
 function addressCandidates(raw) {
   const s = raw.normalize('NFKC')
     .replace(/^(日本|台灣|臺灣|Japan|Taiwan)[、,\s]*/i, '')

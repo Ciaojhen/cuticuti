@@ -435,14 +435,15 @@ function planView(t) {
   const row = (i) => {
     const c = CATS[i.cat] || CATS.other;
     const url = safeURL(i.url);
-    // 卡片以名稱為主：地點是地址、或跟名稱一樣時不另外顯示，只留一個「地圖」連結
-    const isAddr = i.place && looksLikeAddress(i.place);
-    const showPlace = i.place && !isAddr && i.place !== i.title;
-    const mapHref = i.place ? mapURL(isAddr && i.title ? `${i.title} ${i.place}` : i.place) : '';
+    // 地址不顯示；舊資料地點欄放的是地址的也一樣
+    const addr = i.address || (i.place && looksLikeAddress(i.place) ? i.place : '');
+    const showPlace = i.place && i.place !== addr && i.place !== i.title;
+    const mapQuery = addr ? `${(showPlace && i.place) || i.title} ${addr}` : i.place;
+    const mapHref = mapQuery ? mapURL(mapQuery) : '';
     const meta = [
       i.cost !== '' && i.cost != null ? `💰 ${esc(t.currency)} ${fmtNum(i.cost)}` : '',
       url ? `<a href="${esc(url)}" target="_blank" rel="noopener">🔗 連結</a>` : '',
-      i.place && !showPlace ? `<a href="${mapHref}" target="_blank" rel="noopener">📍 地圖</a>` : '',
+      mapHref && !showPlace ? `<a href="${mapHref}" target="_blank" rel="noopener">📍 地圖</a>` : '',
     ].filter(Boolean).join('');
     const hb = hoursBadge(i);
     return `<li class="item ${i.done ? 'done' : ''}" data-act="edit-item" data-id="${i.id}">
@@ -642,11 +643,12 @@ function halfHourOptions(value, placeholder, allow24) {
 function itemForm(t, item) {
   const isNew = !item;
   const ds = tripDays(t);
-  const d = item || { cat: 'sight', date: ui.day === 'none' ? '' : ui.day };
+  const d = item ? { ...item } : { cat: 'sight', date: ui.day === 'none' ? '' : ui.day };
+  if (!d.address && d.place && looksLikeAddress(d.place)) { d.address = d.place; d.place = ''; } // 舊資料：地址放在地點欄
   openSheet(`<form id="f" autocomplete="off">
     ${head(isNew ? '新增行程' : '編輯行程')}
     <div class="pick cats">${Object.entries(CATS).map(([k, c]) => `<label><input type="radio" name="cat" value="${k}" ${d.cat === k ? 'checked' : ''}><span>${c.icon}<small>${c.label}</small></span></label>`).join('')}</div>
-    <label class="field"><span>名稱</span><input name="title" required value="${esc(d.title)}" placeholder="例如：清水寺、一蘭拉麵、新幹線"></label>
+    <label class="field"><span>名稱</span><input name="title" required value="${esc(d.title)}" placeholder="例如：午餐、清水寺、搭新幹線"></label>
     <div class="row">
       <label class="field"><span>哪一天</span><select name="date">
         <option value="">💡 口袋名單</option>
@@ -654,9 +656,10 @@ function itemForm(t, item) {
       </select></label>
       <label class="field"><span>時間</span><input type="time" name="time" value="${esc(d.time)}"></label>
     </div>
-    <div class="field"><span>地點／地址（用來定位和建議順序）</span>
+    <label class="field"><span>地點（會顯示在行程上）</span><input name="place" value="${esc(d.place)}" placeholder="例如：一蘭 河原町店、先斗町"></label>
+    <div class="field"><span>地址（不顯示，用來定位和建議順序）</span>
       <div class="search-row">
-        <input name="place" value="${esc(d.place)}" placeholder="店名、地名，或貼上地址" enterkeyhint="search">
+        <input name="address" value="${esc(d.address)}" placeholder="從 Google 地圖複製地址貼上" enterkeyhint="search">
         <button type="button" class="search-btn" id="place-search">${ICONS.search}搜尋</button>
       </div>
       <div class="results" id="place-results"></div>
@@ -697,7 +700,7 @@ function itemForm(t, item) {
     $('#weekdays', panel).addEventListener('change', () => { daysTouched = true; });
     const showStatus = () => {
       const el = $('#geo-status', panel);
-      if (!geo) { el.textContent = '輸入店名或貼上 Google 地圖的地址，按「搜尋」定位'; return; }
+      if (!geo) { el.textContent = '貼上地址按「搜尋」定位；沒有地址的話，按「搜尋」會用地點名稱找'; return; }
       if (geo.approx) {
         el.innerHTML = `📍 依地址定位，大概在「${esc(geo.approx)}」附近 <button type="button" class="link small" id="geo-clear">清除</button>`;
         $('#geo-clear', panel).onclick = () => { geo = null; showStatus(); };
@@ -710,10 +713,11 @@ function itemForm(t, item) {
     };
     showStatus();
     const doSearch = async () => {
-      const q = form.place.value.trim() || form.title.value.trim();
-      if (!q) return toast('先輸入店名、地名或地址');
-      // 貼上的是地址：直接用地址定位（不會有營業時間）
-      if (looksLikeAddress(q)) {
+      const addr = form.address.value.trim();
+      const q = addr || form.place.value.trim() || form.title.value.trim();
+      if (!q) return toast('先輸入地址或地點');
+      // 有地址：用地址定位（不會有營業時間）；沒有地址：用地點名稱搜尋 OpenStreetMap
+      if (addr && looksLikeAddress(addr)) {
         results.innerHTML = '<p class="hint">用地址定位中…</p>';
         try {
           const r = await geocodeAddress(q);
@@ -734,7 +738,7 @@ function itemForm(t, item) {
         const list = await searchPlaces(q, near);
         results.innerHTML = list.length
           ? list.map((r, k) => `<button type="button" class="result" data-k="${k}"><b>${esc(r.name)}</b><small>${esc(r.address)}</small>${r.hours ? '<small>🕘 有營業時間</small>' : ''}</button>`).join('')
-          : '<p class="hint">找不到這個地點。可以從 Google 地圖複製店家地址，貼在這裡再按「搜尋」。</p>';
+          : '<p class="hint">用名稱找不到。可以從 Google 地圖複製店家地址，貼在上面再按「搜尋」。</p>';
         results.onclick = (ev) => {
           const b = ev.target.closest('.result');
           if (!b) return;
@@ -742,7 +746,7 @@ function itemForm(t, item) {
           geo = { lat: r.lat, lon: r.lon };
           osmHours = r.hours;
           syncDays();
-          form.place.value = r.name;
+          if (!form.place.value.trim()) form.place.value = r.name;
           if (!form.title.value.trim()) form.title.value = r.name;
           results.innerHTML = '';
           showStatus();
@@ -752,14 +756,14 @@ function itemForm(t, item) {
       }
     };
     $('#place-search', panel).onclick = doSearch;
-    form.place.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); doSearch(); } });
+    form.address.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); doSearch(); } });
     form.onsubmit = async (e) => {
       e.preventDefault();
       const v = Object.fromEntries(new FormData(e.target));
       if (Boolean(v.open) !== Boolean(v.close)) return toast('開門和關門時間要一起填');
       const it = item || { id: uid(), done: false };
       Object.assign(it, {
-        cat: v.cat, title: v.title.trim(), date: v.date, time: v.time, place: v.place.trim(),
+        cat: v.cat, title: v.title.trim(), date: v.date, time: v.time, place: v.place.trim(), address: v.address.trim(),
         cost: v.cost === '' ? '' : Number(v.cost), url: v.url.trim(), note: v.note.trim(),
         geo, osmHours, open: v.open, close: v.close, stay: v.stay === '' ? '' : Number(v.stay),
         closedDays: daysTouched ? dayBoxes.filter((b) => !b.checked).map((b) => Number(b.value)).sort() : d.closedDays || [],
@@ -939,7 +943,7 @@ async function importData(file) {
 
 async function shareTrip(t) {
   const ds = tripDays(t);
-  const line = (i) => `${i.time ? i.time + ' ' : ''}${(CATS[i.cat] || CATS.other).icon} ${i.title}${i.place && i.place !== i.title ? `（${shortPlace(i.place)}）` : ''}`;
+  const line = (i) => `${i.time ? i.time + ' ' : ''}${(CATS[i.cat] || CATS.other).icon} ${i.title}${i.place && i.place !== i.title && !looksLikeAddress(i.place) ? `（${i.place}）` : ''}`;
   let text = `${t.emoji} ${t.name}\n${t.dest ? t.dest + '・' : ''}${fmtRange(t)}\n`;
   ds.forEach((d, n) => {
     const list = t.items.filter((i) => i.date === d).sort(byTime);
