@@ -146,6 +146,12 @@ a { color: inherit; }
   border: 2px solid var(--line); background: none; color: #fff; font-weight: 800; font-size: 14px; cursor: pointer; padding: 0;
 }
 .item.done .check { background: var(--ok); border-color: var(--ok); }
+.item.flash { animation: item-flash 1.6s ease-out; }
+@keyframes item-flash {
+  0%, 30% { box-shadow: 0 0 0 3px var(--accent); background: var(--accent-soft); }
+  100% { box-shadow: var(--shadow); background: var(--card); }
+}
+.leaflet-marker-icon { cursor: pointer; }
 
 .hours { display: flex; align-items: flex-start; gap: 4px; font-size: 12px; color: var(--muted); margin-top: 3px; }
 .hours svg { flex: none; width: 13px; height: 13px; margin-top: 2px; }
@@ -215,7 +221,6 @@ button.dot { border: 0; padding: 0; cursor: pointer; }
 .result b { display: block; }
 .result small { display: block; font-size: 12px; color: var(--muted); }
 .weekdays { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-top: 8px; }
-.weekdays input { position: absolute; opacity: 0; pointer-events: none; }
 .weekdays span {
   display: grid; place-items: center; height: 38px; border-radius: 10px; cursor: pointer; font-size: 14px;
   border: 1px solid var(--line); background: var(--bg); color: var(--muted); text-decoration: line-through;
@@ -232,7 +237,7 @@ button.dot { border: 0; padding: 0; cursor: pointer; }
 #sheet.open .backdrop { opacity: 1; }
 .panel {
   position: absolute; left: 0; right: 0; bottom: 0; max-width: 680px; margin: 0 auto;
-  max-height: 92vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  max-height: 92vh; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
   background: var(--bg); border-radius: 22px 22px 0 0;
   padding: 0 16px calc(env(safe-area-inset-bottom) + 20px);
   transform: translateY(100%); transition: transform .28s cubic-bezier(.2, .8, .2, 1);
@@ -258,7 +263,12 @@ button.dot { border: 0; padding: 0; cursor: pointer; }
 .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 
 .pick { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
-.pick label input { position: absolute; opacity: 0; pointer-events: none; }
+/* 用外框當按鈕的隱藏選項（表情、顏色、類別、星期）：
+   不能套用 .field input 的「寬度 100%」，否則整個表單會被撐寬、可以左右拖動 */
+.pick label, .weekdays label { position: relative; }
+.field .pick label input, .field .weekdays label input, .pick label input, .weekdays label input {
+  position: absolute; opacity: 0; pointer-events: none; width: 1px; height: 1px; min-height: 0; padding: 0; margin: 0; border: 0;
+}
 .pick label span {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   min-width: 46px; height: 46px; padding: 0 6px; border-radius: 12px; cursor: pointer;

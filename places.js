@@ -353,8 +353,8 @@ function loadLeaflet() {
 let dayMap = null;
 let dayMarkers = [];
 let dayBounds = null;
-// points：[{ lat, lon, label, done }]；withRoute：要不要畫路線
-async function drawMap(el, points, mode, withRoute, onMeta) {
+// points：[{ lat, lon, label, done }]；withRoute：要不要畫路線；onPick(第幾個)：點標記時呼叫
+async function drawMap(el, points, mode, withRoute, onMeta, onPick) {
   await loadLeaflet();
   if (!el.isConnected) return;
   if (dayMap) { dayMap.remove(); dayMap = null; }
@@ -369,6 +369,7 @@ async function drawMap(el, points, mode, withRoute, onMeta) {
     icon: L.divIcon({ className: '', html: `<span class="pin ${p.done ? 'done' : ''}">${p.label}</span>`, iconSize: [26, 26], iconAnchor: [13, 13] }),
     title: p.title,
   }).addTo(map));
+  if (onPick) dayMarkers.forEach((m, k) => m.on('click', () => onPick(k)));
   dayBounds = latlngs;
   showAllMarkers(false);
   if (!withRoute || points.length < 2) { onMeta(''); return; }

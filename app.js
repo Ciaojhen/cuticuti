@@ -484,7 +484,17 @@ function renderDayMap(t) {
   const geoItems = dayItems(t).filter((i) => i.geo);
   const pts = geoItems.map((i, k) => ({ lat: i.geo.lat, lon: i.geo.lon, label: k + 1, title: i.title, done: i.done }));
   const meta = (txt) => { const m = $('#map-meta'); if (m) m.textContent = txt; };
-  drawMap(el, pts, MODES[t.mode] ? t.mode : 'walk', ui.day !== 'none', meta).catch((err) => meta(friendly(err)));
+  // 點地圖上的標記：捲到對應的行程卡片並閃一下
+  const pick = (k) => {
+    const li = $(`.item[data-id="${geoItems[k].id}"]`);
+    if (!li) return;
+    const top = li.getBoundingClientRect().top + window.scrollY - $('.topbar').offsetHeight - 12;
+    window.scrollTo({ top, behavior: 'smooth' });
+    li.classList.remove('flash');
+    void li.offsetWidth;
+    li.classList.add('flash');
+  };
+  drawMap(el, pts, MODES[t.mode] ? t.mode : 'walk', ui.day !== 'none', meta, pick).catch((err) => meta(friendly(err)));
 }
 
 async function suggestSheet(t) {
