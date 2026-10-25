@@ -5,6 +5,7 @@ const CATS = {
   sight:     { label: '景點', icon: '📍' },
   food:      { label: '餐廳', icon: '🍜' },
   transport: { label: '交通', icon: '🚆' },
+  parking:   { label: '停車', icon: '🅿️' },
   stay:      { label: '住宿', icon: '🏨' },
   shop:      { label: '購物', icon: '🛍️' },
   other:     { label: '其他', icon: '✨' },

@@ -276,7 +276,7 @@ button.dot { border: 0; padding: 0; cursor: pointer; }
 }
 .pick label input:checked + span { border-color: var(--accent); background: var(--accent-soft); }
 .pick label input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
-.pick.cats { display: grid; grid-template-columns: repeat(6, 1fr); }
+.pick.cats { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 5px; }
 .pick.cats label span { height: 58px; font-size: 20px; min-width: 0; }
 .pick.cats small { font-size: 11px; color: var(--muted); }
 .pick.colors label span { min-width: 36px; width: 36px; height: 36px; border-radius: 50%; background: var(--sw); border-color: transparent; }

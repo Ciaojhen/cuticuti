@@ -11,7 +11,7 @@ const MODES = {
   drive:   { label: '開車', icon: '🚗', profile: 'routed-car' },
 };
 // 沒有填停留時間時，依類別預設（分鐘）
-const STAY_DEFAULT = { sight: 90, food: 60, transport: 0, stay: 0, shop: 60, other: 60 };
+const STAY_DEFAULT = { sight: 90, food: 60, transport: 0, parking: 0, stay: 0, shop: 60, other: 60 };
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const toMin = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; };
