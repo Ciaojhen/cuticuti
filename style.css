@@ -146,7 +146,9 @@ a { color: inherit; }
 }
 .item.done .check { background: var(--ok); border-color: var(--ok); }
 
-.hours { font-size: 12px; color: var(--muted); margin-top: 3px; }
+.hours { display: flex; align-items: flex-start; gap: 4px; font-size: 12px; color: var(--muted); margin-top: 3px; }
+.hours svg { flex: none; width: 13px; height: 13px; margin-top: 2px; }
+.hours-text span { white-space: nowrap; }
 .hours.bad { color: var(--danger); }
 
 /* ---------- 排序工具 ---------- */

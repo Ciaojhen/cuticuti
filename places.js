@@ -1,5 +1,5 @@
 'use strict';
-/* 地點、營業時間、路線圖與排序建議
+/* 地點、營業時間與排序建議
  * 全部使用 OpenStreetMap 的免費服務，不需要 API 金鑰：
  *   搜尋地點：Nominatim（使用規範：每秒最多 1 次、不能邊打字邊搜尋）
  *   移動時間：routing.openstreetmap.de（OSRM，步行／開車），用來計算建議順序 */
@@ -15,6 +15,7 @@ const STAY_DEFAULT = { sight: 90, food: 60, transport: 0, stay: 0, shop: 60, oth
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const toMin = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; };
 const fmtMin = (m) => `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(Math.round(m % 60)).padStart(2, '0')}`;
+const fmtShort = (m) => fmtMin(m).replace(/^0(\d)/, '$1'); // 營業時間顯示用：9:00 而不是 09:00
 const fmtDuration = (m) => (m < 60 ? `${Math.round(m)} 分` : `${Math.floor(m / 60)} 小時${Math.round(m % 60) ? ` ${Math.round(m % 60)} 分` : ''}`);
 const stayOf = (i) => (i.stay !== '' && i.stay != null ? Number(i.stay) : STAY_DEFAULT[i.cat] ?? 60);
 
@@ -128,25 +129,21 @@ function hoursFor(item, date) {
   }
   return week[parseDate(date).getDay()];
 }
-const fmtRanges = (ranges) => (!ranges ? '時間未填' : ranges.length ? ranges.map(([o, c]) => `${fmtMin(o)}–${c === 1440 ? '24:00' : fmtMin(c)}`).join('、') : '公休');
+const fmtRanges = (ranges) => (!ranges ? '時間未填' : ranges.length ? ranges.map(([o, c]) => `${fmtShort(o)}–${c === 1440 ? '24:00' : fmtShort(c)}`).join('、') : '公休');
 
 // 行程卡片上要顯示的營業時間文字與提醒
 function hoursBadge(item) {
   const h = hoursFor(item, item.date);
   if (h === null) {
     const week = weekOf(item);
-    if (week && !item.date) return { text: describeWeek(week), warn: '' }; // 口袋名單：顯示整週
+    if (week && !item.date) return { text: describeWeek(week), bad: false }; // 口袋名單：顯示整週
     if (week) return null; // 這天有開但沒填時間
-
-    return item.osmHours ? { text: item.osmHours, warn: '' } : null;
+    return item.osmHours ? { text: item.osmHours, bad: false } : null;
   }
-  if (!h.length) return { text: '', warn: '這天公休' };
-  let warn = '';
-  if (item.time) {
-    const t = toMin(item.time);
-    if (!h.some(([o, c]) => t >= o && t < c)) warn = '這個時間沒開';
-  }
-  return { text: fmtRanges(h), warn };
+  if (!h.length) return { text: '公休', bad: true };
+  const t = item.time ? toMin(item.time) : null;
+  if (t !== null && !h.some(([o, c]) => t >= o && t < c)) return { text: `${fmtRanges(h)}・未營業`, bad: true };
+  return { text: fmtRanges(h), bad: false };
 }
 
 /* ---------- 距離與移動時間 ---------- */
@@ -270,17 +267,19 @@ function describeHours(raw) {
   return week ? describeWeek(week) : raw;
 }
 function describeWeek(week) {
+  // 精簡寫法：「10:00–18:00・週五休」；每天時間不同時「一至五 9:00–18:00／六日 10:00–17:00」
   const order = [1, 2, 3, 4, 5, 6, 0];
-  const name = (d) => '週' + '日一二三四五六'[d];
+  const closed = order.filter((d) => week[d] && !week[d].length);
   const groups = [];
   for (const d of order) {
+    if (!week[d] || !week[d].length) continue;
     const txt = fmtRanges(week[d]);
     const g = groups[groups.length - 1];
-    if (g && g.txt === txt) g.days.push(d); else groups.push({ txt, days: [d] });
+    if (g && g.txt === txt && g.last === order.indexOf(d) - 1) { g.days.push(d); g.last++; } else groups.push({ txt, days: [d], last: order.indexOf(d) });
   }
-  if (groups.length === 1) return '每天 ' + groups[0].txt;
-  return groups.map((g) => {
-    const label = g.days.length === 1 ? name(g.days[0]) : g.days.length === 2 ? `${name(g.days[0])}、${name(g.days[1])}` : `${name(g.days[0])}至${name(g.days[g.days.length - 1])}`;
-    return `${label} ${g.txt}`;
-  }).join('；');
+  const label = (days) => (days.length >= 3 ? `${WEEK[days[0]]}至${WEEK[days[days.length - 1]]}` : days.map((d) => WEEK[d]).join(''));
+  const sameTime = new Set(groups.map((g) => g.txt)).size <= 1;
+  const open = sameTime ? (groups[0]?.txt || '') : groups.map((g) => `${label(g.days)} ${g.txt}`).join('／');
+  const off = closed.length ? `週${closed.map((d) => WEEK[d]).join('、')}休` : '';
+  return [open, off].filter(Boolean).join('・') || '時間未填';
 }

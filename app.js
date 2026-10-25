@@ -291,6 +291,7 @@ const ICONS = {
   settings: icon('<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>'),
   edit: icon('<path d="M21.17 6.81a1 1 0 0 0-3.98-3.98L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z"/><path d="m15 5 4 4"/>'),
   back: icon('<path d="m15 18-6-6 6-6"/>'),
+  clock: icon('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
   sparkle: icon('<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 3v4"/><path d="M17 5h4"/>'),
   search: icon('<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>'),
 };
@@ -441,7 +442,7 @@ function planView(t) {
       <div class="body">
         <div class="t">${esc(i.title)}</div>
         ${i.place ? `<a class="place" href="${mapURL(i.place)}" target="_blank" rel="noopener">📍 ${esc(i.place)}</a>` : ''}
-        ${hb ? `<div class="hours ${hb.warn ? 'bad' : ''}">${hb.text ? `🕘 ${esc(hb.text)}` : ''}${hb.warn ? `${hb.text ? '・' : ''}⚠️ ${hb.warn}` : ''}</div>` : ''}
+        ${hb ? `<div class="hours ${hb.bad ? 'bad' : ''}">${ICONS.clock}<span class="hours-text">${hb.text.split('／').map((x) => `<span>${esc(x)}</span>`).join('／')}</span></div>` : ''}
         ${i.note ? `<p class="note">${esc(i.note)}</p>` : ''}
         ${meta ? `<div class="meta">${meta}</div>` : ''}
       </div>
@@ -658,7 +659,7 @@ function itemForm(t, item) {
         <select name="close" aria-label="關門">${halfHourOptions(d.close, '關門', true)}</select>
       </div>
       <div class="weekdays" id="weekdays">${[1, 2, 3, 4, 5, 6, 0].map((n) => `<label><input type="checkbox" name="openday" value="${n}"><span>${WEEK[n]}</span></label>`).join('')}</div>
-      <p class="geo-status">點星期切換：亮的是有營業，灰色是公休。</p>
+      <p class="geo-status">點星期切換，灰色＝公休</p>
     </div>
     <label class="field"><span>預計停留</span><select name="stay">
       <option value="">自動（依類別）</option>
@@ -687,10 +688,10 @@ function itemForm(t, item) {
     $('#weekdays', panel).addEventListener('change', () => { daysTouched = true; });
     const showStatus = () => {
       const el = $('#geo-status', panel);
-      if (!geo) { el.textContent = '按「搜尋」找到位置後，就能顯示在路線圖上，也會自動帶入營業時間。'; return; }
-      el.innerHTML = `📍 已定位 <button type="button" class="link small" id="geo-clear">清除</button><br>${osmHours
-        ? `營業時間（OpenStreetMap）：${esc(describeHours(osmHours))}<br>與實際可能不同，需要的話可以在下面自己填。`
-        : 'OpenStreetMap 沒有這裡的營業時間，可以在下面自己填。'}`;
+      if (!geo) { el.textContent = '搜尋並選擇地點，會自動帶入營業時間'; return; }
+      el.innerHTML = `📍 已定位 <button type="button" class="link small" id="geo-clear">清除</button>・${osmHours
+        ? `OSM 營業時間：${esc(describeHours(osmHours))}（僅供參考）`
+        : 'OSM 沒有營業時間'}`;
       $('#geo-clear', panel).onclick = () => { geo = null; osmHours = ''; showStatus(); };
     };
     showStatus();
