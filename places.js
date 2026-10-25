@@ -2,8 +2,7 @@
 /* 地點、營業時間、路線圖與排序建議
  * 全部使用 OpenStreetMap 的免費服務，不需要 API 金鑰：
  *   搜尋地點：Nominatim（使用規範：每秒最多 1 次、不能邊打字邊搜尋）
- *   路線與移動時間：routing.openstreetmap.de（OSRM，步行／開車）
- *   地圖：Leaflet + OpenStreetMap 圖磚（第一次打開地圖時才載入） */
+ *   移動時間：routing.openstreetmap.de（OSRM，步行／開車），用來計算建議順序 */
 
 const MODES = {
   walk:    { label: '步行', icon: '🚶', profile: 'routed-foot' },
@@ -186,35 +185,6 @@ async function travelMatrix(pts, mode) {
   }
 }
 
-// 地圖上的路線：{ line: [[lat, lon], ...], minutes, km, estimated }
-async function routeLine(pts, mode) {
-  const straight = () => {
-    let km = 0;
-    let minutes = 0;
-    for (let i = 1; i < pts.length; i++) {
-      const d = haversineKm(pts[i - 1], pts[i]);
-      km += d;
-      minutes += estimateMinutes(d, mode);
-    }
-    return { line: pts.map((p) => [p.lat, p.lon]), minutes, km, estimated: true };
-  };
-  const profile = MODES[mode]?.profile;
-  if (!profile || pts.length < 2) return straight();
-  const key = `route|${profile}|${coordStr(pts)}`;
-  if (routeCache.has(key)) return routeCache.get(key);
-  try {
-    const res = await fetch(`https://routing.openstreetmap.de/${profile}/route/v1/driving/${coordStr(pts)}?overview=full&geometries=geojson`);
-    const data = await res.json();
-    if (data.code !== 'Ok') throw new Error(data.code);
-    const r = data.routes[0];
-    const out = { line: r.geometry.coordinates.map(([lon, lat]) => [lat, lon]), minutes: r.duration / 60, km: r.distance / 1000, estimated: false };
-    routeCache.set(key, out);
-    return out;
-  } catch {
-    return straight();
-  }
-}
-
 /* ---------- 排序建議 ----------
  * 依序模擬一天：移動 → 太早到就等開門 → 停留 → 下一站
  * 分數 = 移動時間 + 等待時間的一半 + 抵達時沒開／停留中關門的懲罰，分數越低越好 */
@@ -292,49 +262,6 @@ function suggestOrder(items, matrix, startMin, date, fixFirst) {
     }
   }
   return best;
-}
-
-/* ---------- 地圖（Leaflet） ---------- */
-let leafletLoading = null;
-function loadLeaflet() {
-  if (window.L) return Promise.resolve();
-  if (!leafletLoading) {
-    leafletLoading = new Promise((res, rej) => {
-      const css = Object.assign(document.createElement('link'), { rel: 'stylesheet', href: 'vendor/leaflet.css' });
-      const js = Object.assign(document.createElement('script'), { src: 'vendor/leaflet.js', onload: res, onerror: () => { leafletLoading = null; rej(new Error('地圖載入失敗')); } });
-      document.head.append(css, js);
-    });
-  }
-  return leafletLoading;
-}
-
-let dayMap = null;
-// points：[{ lat, lon, label, done }]；withRoute：要不要畫路線
-async function drawMap(el, points, mode, withRoute, onMeta) {
-  await loadLeaflet();
-  if (!el.isConnected) return;
-  if (dayMap) { dayMap.remove(); dayMap = null; }
-  const map = L.map(el, { zoomControl: false, attributionControl: true });
-  dayMap = map;
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>',
-  }).addTo(map);
-  const latlngs = points.map((p) => [p.lat, p.lon]);
-  points.forEach((p) => {
-    L.marker([p.lat, p.lon], {
-      icon: L.divIcon({ className: '', html: `<span class="pin ${p.done ? 'done' : ''}">${p.label}</span>`, iconSize: [26, 26], iconAnchor: [13, 13] }),
-      title: p.title,
-    }).addTo(map);
-  });
-  if (latlngs.length === 1) map.setView(latlngs[0], 15);
-  else map.fitBounds(latlngs, { padding: [28, 28], maxZoom: 16 });
-  if (!withRoute || points.length < 2) { onMeta(''); return; }
-  onMeta('計算路線中…');
-  const r = await routeLine(points, mode);
-  if (dayMap !== map) return;
-  L.polyline(r.line, { color: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#ff6b4a', weight: 4, opacity: 0.85, dashArray: r.estimated ? '6 8' : null }).addTo(map);
-  onMeta(`${MODES[mode].icon} 移動約 ${fmtDuration(r.minutes)}・${r.km.toFixed(1)} 公里${r.estimated ? '（直線估算）' : ''}`);
 }
 
 // 把營業時間整理成好讀的文字，例如「週一至週五 09:00–18:00；週六、週日 10:00–17:00」

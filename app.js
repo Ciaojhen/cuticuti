@@ -291,7 +291,6 @@ const ICONS = {
   settings: icon('<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>'),
   edit: icon('<path d="M21.17 6.81a1 1 0 0 0-3.98-3.98L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z"/><path d="m15 5 4 4"/>'),
   back: icon('<path d="m15 18-6-6 6-6"/>'),
-  map: icon('<path d="M14.1 5.55a2 2 0 0 0 1.8 0l3.65-1.83A1 1 0 0 1 21 4.62v12.76a1 1 0 0 1-.55.9l-4.55 2.27a2 2 0 0 1-1.8 0l-4.2-2.1a2 2 0 0 0-1.8 0l-3.65 1.83A1 1 0 0 1 3 19.38V6.62a1 1 0 0 1 .55-.9L8.1 3.45a2 2 0 0 1 1.8 0z"/><path d="M15 5.76v15"/><path d="M9 3.24v15"/>'),
   sparkle: icon('<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 3v4"/><path d="M17 5h4"/>'),
   search: icon('<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>'),
 };
@@ -389,7 +388,6 @@ function renderTrip() {
   const on = $('.chip.on');
   if (on) on.parentElement.scrollLeft = on.offsetLeft - (on.parentElement.clientWidth - on.offsetWidth) / 2;
   hydratePhotos(app);
-  renderDayMap(t);
   const pf = $('#pack-form');
   if (pf) pf.onsubmit = async (e) => {
     e.preventDefault();
@@ -403,7 +401,6 @@ function renderTrip() {
 }
 
 /* ---- 行程 ---- */
-let showMap = store.get('show-map') === '1';
 let suggestion = null; // 建議順序的計算結果，等使用者按「套用」
 
 // 目前選的那天（或口袋名單）的行程，依時間排序
@@ -429,7 +426,6 @@ function planView(t) {
   }).join('') + `<button class="chip ${ui.day === 'none' ? 'on' : ''}" data-act="day" data-day="none"><b>💡 口袋名單</b><small>還沒排進哪天・${unsched.length}</small></button>`;
 
   const list = dayItems(t);
-  const geoItems = list.filter((i) => i.geo);
   const mode = MODES[t.mode] ? t.mode : 'walk';
   const row = (i) => {
     const c = CATS[i.cat] || CATS.other;
@@ -439,10 +435,9 @@ function planView(t) {
       url ? `<a href="${esc(url)}" target="_blank" rel="noopener">🔗 連結</a>` : '',
     ].filter(Boolean).join('');
     const hb = hoursBadge(i);
-    const seq = showMap && i.geo ? geoItems.indexOf(i) + 1 : 0;
     return `<li class="item ${i.done ? 'done' : ''}" data-act="edit-item" data-id="${i.id}">
       <div class="time ${i.time ? '' : 'none'}">${i.time || '—'}</div>
-      <div class="dot">${seq ? `<span class="pin small">${seq}</span>` : c.icon}</div>
+      <div class="dot">${c.icon}</div>
       <div class="body">
         <div class="t">${esc(i.title)}</div>
         ${i.place ? `<a class="place" href="${mapURL(i.place)}" target="_blank" rel="noopener">📍 ${esc(i.place)}</a>` : ''}
@@ -456,24 +451,11 @@ function planView(t) {
   const empty = ui.day === 'none'
     ? `<div class="empty"><div class="big">💡</div><b>口袋名單是空的</b>想去但還沒決定哪天的地方，可以先放這裡</div>`
     : `<div class="empty"><div class="big">🗓️</div><b>這天還沒有安排</b>點「新增行程」開始排吧</div>`;
-  const tools = list.length ? `<div class="plan-tools">
-      <button class="tool ${showMap ? 'on' : ''}" data-act="toggle-map">${ICONS.map}路線圖</button>
-      ${ui.day !== 'none' ? `<button class="tool" data-act="suggest-order">${ICONS.sparkle}建議順序</button>` : ''}
+  const tools = list.length && ui.day !== 'none' ? `<div class="plan-tools">
+      <button class="tool" data-act="suggest-order">${ICONS.sparkle}建議順序</button>
       <button class="tool mode" data-act="cycle-mode" aria-label="切換交通方式">${MODES[mode].icon} ${MODES[mode].label}</button>
     </div>` : '';
-  const mapCard = !showMap || !list.length ? ''
-    : geoItems.length ? `<div class="map-card"><div id="day-map"></div><div class="map-meta" id="map-meta"></div></div>`
-    : `<p class="hint map-empty">這天還沒有定位的地點。編輯行程時在「地點」按「搜尋」並選擇結果，就會出現在地圖上。</p>`;
-  return `<div class="chips">${chips}</div>${tools}${mapCard}${list.length ? `<ol class="timeline">${list.map(row).join('')}</ol>` : empty}`;
-}
-
-function renderDayMap(t) {
-  const el = $('#day-map');
-  if (!el) { if (dayMap) { dayMap.remove(); dayMap = null; } return; }
-  const geoItems = dayItems(t).filter((i) => i.geo);
-  const pts = geoItems.map((i, k) => ({ lat: i.geo.lat, lon: i.geo.lon, label: k + 1, title: i.title, done: i.done }));
-  const meta = (txt) => { const m = $('#map-meta'); if (m) m.textContent = txt; };
-  drawMap(el, pts, MODES[t.mode] ? t.mode : 'walk', ui.day !== 'none', meta).catch((err) => meta(friendly(err)));
+  return `<div class="chips">${chips}</div>${tools}${list.length ? `<ol class="timeline">${list.map(row).join('')}</ol>` : empty}`;
 }
 
 async function suggestSheet(t) {
@@ -995,10 +977,6 @@ document.addEventListener('click', async (e) => {
       await closeSheet();
       return renderTrip();
     case 'edit-journal': return journalSheet(t, el.dataset.day);
-    case 'toggle-map':
-      showMap = !showMap;
-      store.set('show-map', showMap ? '1' : '');
-      return renderTrip();
     case 'cycle-mode': {
       const keys = Object.keys(MODES);
       t.mode = keys[(keys.indexOf(MODES[t.mode] ? t.mode : 'walk') + 1) % keys.length];
