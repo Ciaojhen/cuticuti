@@ -1138,8 +1138,33 @@ document.addEventListener('click', async (e) => {
 });
 
 /* ============ 拖拉改變順序 ============
- * 按住卡片右邊的把手上下拖。行程依時間排列，所以放開後「時間跟著位置交換」：
- * 原本的時間點不變，依新的順序重新分配（沒有時間的行程排在最後）。 */
+ * 按住卡片右邊的把手上下拖。放開後依新的順序重新計算時間：
+ * 從當天最早的時間出發，加上移動時間、停留時間，太早到就等開門（跟「建議順序」同一套算法）。 */
+const UNKNOWN_LEG = 15; // 沒有定位、不知道距離時，先抓 15 分鐘
+
+async function retimeDay(t, day, list) {
+  const times = list.filter((i) => i.time).map((i) => toMin(i.time));
+  if (!times.length) return false; // 這天都沒填時間：只換順序
+  const geoIdx = list.map((i, k) => (i.geo ? k : -1)).filter((k) => k >= 0);
+  const matrix = geoIdx.length >= 2 ? await travelMatrix(geoIdx.map((k) => list[k].geo), dayMode(t, day)) : null;
+  const leg = (a, b) => {
+    const ia = geoIdx.indexOf(a);
+    const ib = geoIdx.indexOf(b);
+    return matrix && ia >= 0 && ib >= 0 ? matrix[ia][ib] : UNKNOWN_LEG;
+  };
+  let m = Math.min(...times);
+  list.forEach((it, k) => {
+    if (k > 0) m += leg(k - 1, k);
+    m = ceil5(m);
+    const h = hoursFor(it, day);
+    const slot = h && h.find(([, c]) => m < c);
+    if (slot && m < slot[0]) m = slot[0];
+    it.time = fmtMin(m);
+    m += stayOf(it);
+  });
+  return true;
+}
+
 let drag = null;
 document.addEventListener('pointerdown', (e) => {
   const grip = e.target.closest('.grip');
@@ -1184,15 +1209,21 @@ const endDrag = async () => {
   items[0]?.parentElement.classList.remove('sorting');
   if (from === to) return;
   const t = current;
+  const day = ui.day;
   const list = dayItems(t);
   const slots = list.map((i) => i.time || ''); // 已依時間排好，沒有時間的在最後
   const [moved] = list.splice(from, 1);
   list.splice(to, 0, moved);
+  // 先用原本的時間點換位置，讓畫面馬上照新順序顯示；接著再依移動時間重新計算
   list.forEach((it, k) => { it.time = slots[k]; });
   const ids = new Set(list.map((i) => i.id));
   t.items = [...t.items.filter((i) => !ids.has(i.id)), ...list]; // 同時間（或沒時間）的行程，依這個順序排
-  await saveTrip(t);
   renderTrip();
+  if (day !== 'none' && await retimeDay(t, day, list)) {
+    toast('已依新的順序重新計算時間');
+    if (current === t) renderTrip();
+  }
+  await saveTrip(t);
 };
 document.addEventListener('pointerup', endDrag);
 document.addEventListener('pointercancel', endDrag);
