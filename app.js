@@ -499,8 +499,12 @@ function renderDayMap(t) {
 
 async function suggestSheet(t) {
   const list = dayItems(t);
-  const geo = list.filter((i) => i.geo);
-  if (geo.length < 2) return toast('至少要有 2 個已定位的地點才能建議順序：編輯行程 → 地點 → 搜尋', 4500);
+  const located = list.filter((i) => i.geo);
+  if (located.length < 2) return toast('至少要有 2 個已定位的地點才能建議順序：編輯行程 → 地址 → 搜尋', 4500);
+  // 這天公休的地點不排進去，另外提醒換一天
+  const closed = located.filter((i) => { const h = hoursFor(i, ui.day); return h && !h.length; });
+  const geo = located.filter((i) => !closed.includes(i));
+  if (!geo.length) return toast('這天的地點都公休，建議換一天', 4000);
   const mode = MODES[t.mode] ? t.mode : 'walk';
   toast('計算路線中…');
   const matrix = await travelMatrix(geo.map((i) => i.geo), mode);
@@ -523,18 +527,19 @@ async function suggestSheet(t) {
       const move = k ? `<div class="leg">${MODES[mode].icon} ${fmtDuration(matrix[best.order[k - 1]][best.order[k]])}</div>` : '';
       return `${move}<li><span class="pin">${k + 1}</span><div>
         <b>${esc(x.item.title)}</b>
-        <small>${fmtMin(x.arrive)} 抵達・停留 ${fmtDuration(stayOf(x.item))}${h ? `・營業 ${fmtRanges(h)}` : ''}</small>
+        <small>${fmtMin(x.arrive)} 抵達${x.waited ? `（等開門 ${fmtDuration(x.waited)}）` : ''}・停留 ${fmtDuration(stayOf(x.item))}${h ? `・營業 ${fmtRanges(h)}` : ''}</small>
         ${x.warn ? `<small class="bad">⚠️ ${x.warn}</small>` : ''}</div></li>`;
     }).join('')}</ol>
+    ${closed.length ? `<p class="hint bad">⚠️ 這天公休，沒有排進去：${closed.map((i) => esc(i.title)).join('、')}（建議移到其他天）</p>` : ''}
     ${skipped.length ? `<p class="hint">沒有定位、不參與排序：${skipped.map((i) => esc(i.title)).join('、')}</p>` : ''}
-    <p class="hint">按「套用」會把這些地點的時間改成建議的抵達時間。停留時間可以在每個行程裡調整。${mode === 'transit' ? '大眾運輸的移動時間是用距離估算的，僅供參考。' : ''}</p>
+    <p class="hint">時間已經依營業時間排好：太早到會等開門、盡量在打烊前離開。按「套用」會把時間改成建議的抵達時間。停留時間可以在每個行程裡調整。${mode === 'transit' ? '大眾運輸的移動時間是用距離估算的，僅供參考。' : ''}</p>
   </div>`);
 }
 
 async function applySuggestion() {
   if (!suggestion) return;
   const { trip, best } = suggestion;
-  best.stops.forEach((x) => { x.item.time = fmtMin(Math.round(x.arrive / 5) * 5); });
+  best.stops.forEach((x) => { x.item.time = fmtMin(x.arrive); });
   suggestion = null;
   await saveTrip(trip);
   await closeSheet();

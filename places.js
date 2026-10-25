@@ -260,6 +260,8 @@ async function routeLine(pts, mode) {
 /* ---------- 排序建議 ----------
  * 依序模擬一天：移動 → 太早到就等開門 → 停留 → 下一站
  * 分數 = 移動時間 + 等待時間的一半 + 抵達時沒開／停留中關門的懲罰，分數越低越好 */
+const ceil5 = (m) => Math.ceil(m / 5) * 5; // 排出來的時間以 5 分鐘為單位，只往後進位（不會因為進位變成還沒開門）
+
 function simulate(order, items, matrix, startMin, date) {
   let t = startMin;
   let travel = 0;
@@ -272,22 +274,28 @@ function simulate(order, items, matrix, startMin, date) {
       travel += m;
       t += m;
     }
+    t = ceil5(t);
     const h = hoursFor(it, date);
     let warn = '';
+    let waited = 0;
     if (h) {
       if (!h.length) { penalty += 1000; warn = '這天公休'; }
       else {
         const slot = h.find(([, c]) => t < c);
         if (!slot) { penalty += 500; warn = '抵達時已打烊'; }
         else {
-          if (t < slot[0]) { wait += slot[0] - t; t = slot[0]; }
+          if (t < slot[0]) {
+            wait += slot[0] - t; // 計分時照算，避免為了不等而故意晚出發
+            if (k > 0) waited = slot[0] - t; // 第一站還沒開門只是晚點出發，畫面上不顯示「等開門」
+            t = slot[0];
+          }
           if (t + stayOf(it) > slot[1]) { penalty += 100 + (t + stayOf(it) - slot[1]); warn = `${fmtMin(slot[1])} 就關門，待不滿 ${stayOf(it)} 分`; }
         }
       }
     }
     const arrive = t;
     t += stayOf(it);
-    return { item: it, arrive, warn };
+    return { item: it, arrive, warn, waited };
   });
   return { order, stops, travel, wait, cost: travel + wait / 2 + penalty, end: t };
 }

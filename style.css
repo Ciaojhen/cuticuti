@@ -289,6 +289,7 @@ button.dot { border: 0; padding: 0; cursor: pointer; }
 .btn.ghost { background: var(--card); color: var(--text); border: 1px solid var(--line); font-weight: 600; }
 .danger { display: block; width: 100%; border: 0; background: none; color: var(--danger); padding: 14px; font-size: 15px; cursor: pointer; margin-top: 6px; }
 .hint { font-size: 13px; color: var(--muted); margin: 6px 4px 12px; line-height: 1.6; }
+.hint.bad { color: var(--danger); }
 
 /* ---------- 日記 ---------- */
 .jcard { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px; margin-bottom: 10px; cursor: pointer; }
