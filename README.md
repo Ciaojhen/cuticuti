@@ -18,6 +18,7 @@
 - **花費**：依類別、依日期自動加總
 - **分享行程**：轉成文字，可直接貼到 LINE
 - **備份 / 還原**：匯出成 JSON 檔（含照片）
+- **桌面倒數小工具**：設定 →「建立桌面倒數小工具」產生 Scriptable 腳本（`widget.js`），貼到免費的 Scriptable App，就能在 iPhone 桌面或鎖定畫面顯示旅程倒數
 
 ## 地圖與地點資料
 全部使用 OpenStreetMap 的免費服務，不需要 API 金鑰：搜尋用 Nominatim、路線用 routing.openstreetmap.de、地圖用 Leaflet（`vendor/leaflet.*`）。相關程式在 `places.js`。

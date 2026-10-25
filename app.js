@@ -882,6 +882,9 @@ function settingsSheet() {
     <p class="hint">共 ${trips.length} 趟旅程・${pending.count() ? `⏳ 有 ${pending.count()} 項變更等待上傳` : '✅ 已全部同步'}${lastSync ? `（上次同步 ${new Date(lastSync).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })}）` : ''}</p>
     <button class="btn" data-act="sync-now">🔄 立即同步</button>
     <button class="btn ghost" data-act="logout">登出</button>
+    <h2 class="section">桌面倒數小工具</h2>
+    <p class="hint">用免費的 Scriptable App，在 iPhone 桌面或鎖定畫面顯示下一趟旅程的倒數。</p>
+    <button class="btn ghost" data-act="widget">📱 建立桌面倒數小工具</button>
     <h2 class="section">備份</h2>
     <p class="hint">可以另外匯出一份檔案自己保存（包含照片）。</p>
     <button class="btn ghost" data-act="export">⬇️ 匯出備份檔</button>
@@ -896,6 +899,39 @@ function settingsSheet() {
       const f = e.target.files[0];
       e.target.value = '';
       if (f) importData(f);
+    };
+  });
+}
+
+// 產生 Scriptable 腳本並複製，再顯示設定步驟
+async function widgetSheet() {
+  const code = widgetScript(trips, location.origin + location.pathname);
+  let copied = false;
+  try { await navigator.clipboard.writeText(code); copied = true; } catch { /* 有些瀏覽器不允許，改成手動複製 */ }
+  const upcoming = trips.filter((t) => t.start && tripStatus(t).kind !== 'past').length;
+  openSheet(`<div>
+    <div class="sheet-head"><span style="min-width:48px"></span><b>桌面倒數小工具</b><button class="link strong" data-act="close-sheet">完成</button></div>
+    <p class="hint">${copied ? '✅ 程式已經複製好了（包含 ' + upcoming + ' 趟接下來的旅程）' : '請按下面的「複製程式」'}</p>
+    <ol class="steps">
+      <li>打開 <b>Scriptable</b>，按右上角 <b>＋</b></li>
+      <li>在空白處長按 → <b>貼上</b>，點最上面的標題改名為「<b>cuticuti 倒數</b>」，按 <b>Done</b></li>
+      <li>回到 iPhone 桌面，長按空白處 → 左上角 <b>＋</b> → 搜尋 <b>Scriptable</b> → 選大小 → <b>加入小工具</b></li>
+      <li>長按剛加入的小工具 → <b>編輯小工具</b> → Script 選「<b>cuticuti 倒數</b>」</li>
+    </ol>
+    <p class="hint">鎖定畫面也可以加：長按鎖定畫面 → 自訂 → 加入小工具 → Scriptable，一樣選「cuticuti 倒數」。<br>
+      倒數天數每天會自動更新。<b>新增或修改旅程日期後</b>，再按一次「建立桌面倒數小工具」，貼上覆蓋 Scriptable 裡原本的程式。<br>
+      程式裡只有旅程名稱和日期，不含任何登入資訊。</p>
+    <button class="btn ${copied ? 'ghost' : ''}" id="widget-copy">📋 ${copied ? '再複製一次' : '複製程式'}</button>
+    <details class="code"><summary>看程式內容</summary><textarea class="input" rows="8" readonly id="widget-code">${esc(code)}</textarea></details>
+  </div>`, (panel) => {
+    $('#widget-copy', panel).onclick = async () => {
+      try { await navigator.clipboard.writeText(code); toast('已複製 ✅'); }
+      catch {
+        const ta = $('#widget-code', panel);
+        ta.closest('details').open = true;
+        ta.select();
+        toast('請長按選取的文字 → 拷貝', 3500);
+      }
     };
   });
 }
@@ -1020,6 +1056,7 @@ document.addEventListener('click', async (e) => {
       return;
     case 'settings': return settingsSheet();
     case 'export': return exportData();
+    case 'widget': return widgetSheet();
     case 'new-trip': return tripForm();
     case 'edit-trip': return tripForm(t);
     case 'share-trip': return shareTrip(t);
