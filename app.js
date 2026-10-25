@@ -446,7 +446,7 @@ function planView(t) {
       <div class="body">
         <div class="t">${esc(i.title)}</div>
         ${i.place ? `<a class="place" href="${mapURL(i.place)}" target="_blank" rel="noopener">📍 ${esc(i.place)}</a>` : ''}
-        ${hb ? `<div class="hours ${hb.warn ? 'bad' : ''}">🕘 ${esc(hb.text)}${hb.warn ? `・⚠️ ${hb.warn}` : ''}</div>` : ''}
+        ${hb ? `<div class="hours ${hb.warn ? 'bad' : ''}">${hb.text ? `🕘 ${esc(hb.text)}` : ''}${hb.warn ? `${hb.text ? '・' : ''}⚠️ ${hb.warn}` : ''}</div>` : ''}
         ${i.note ? `<p class="note">${esc(i.note)}</p>` : ''}
         ${meta ? `<div class="meta">${meta}</div>` : ''}
       </div>
@@ -638,6 +638,15 @@ function tripForm(t) {
   });
 }
 
+// 營業時間只能選整點或半點；關門可以選 24:00。舊資料不是整點／半點的話也保留
+function halfHourOptions(value, placeholder, allow24) {
+  const opts = [];
+  for (let m = 0; m < 1440; m += 30) opts.push(fmtMin(m));
+  if (allow24) opts.push('24:00');
+  if (value && !opts.includes(value)) opts.push(value);
+  return `<option value="">${placeholder}</option>` + opts.map((o) => `<option value="${o}" ${o === value ? 'selected' : ''}>${o}</option>`).join('');
+}
+
 function itemForm(t, item) {
   const isNew = !item;
   const ds = tripDays(t);
@@ -661,9 +670,13 @@ function itemForm(t, item) {
       <div class="results" id="place-results"></div>
       <p class="geo-status" id="geo-status"></p>
     </div>
-    <div class="row">
-      <label class="field"><span>開門</span><input type="time" name="open" value="${esc(d.open)}"></label>
-      <label class="field"><span>關門</span><input type="time" name="close" value="${esc(d.close)}"></label>
+    <div class="field"><span>營業時間（自己填的會優先使用）</span>
+      <div class="row">
+        <select name="open" aria-label="開門">${halfHourOptions(d.open, '開門', false)}</select>
+        <select name="close" aria-label="關門">${halfHourOptions(d.close, '關門', true)}</select>
+      </div>
+      <div class="weekdays" id="weekdays">${[1, 2, 3, 4, 5, 6, 0].map((n) => `<label><input type="checkbox" name="openday" value="${n}"><span>${WEEK[n]}</span></label>`).join('')}</div>
+      <p class="geo-status">點星期切換：亮的是有營業，灰色是公休。</p>
     </div>
     <label class="field"><span>預計停留</span><select name="stay">
       <option value="">自動（依類別）</option>
@@ -680,6 +693,16 @@ function itemForm(t, item) {
     let geo = d.geo || null;
     let osmHours = d.osmHours || '';
     const results = $('#place-results', panel);
+    // 營業日：有自己設定過就用自己的，否則依 OpenStreetMap 的資料（沒資料就預設每天都有開）
+    let daysTouched = false;
+    const dayBoxes = [...panel.querySelectorAll('[name=openday]')];
+    const syncDays = () => {
+      if (daysTouched) return;
+      const closed = d.closedDays?.length ? d.closedDays : (parseHours(osmHours) || []).flatMap((r, n) => (r && !r.length ? [n] : []));
+      dayBoxes.forEach((b) => { b.checked = !closed.includes(Number(b.value)); });
+    };
+    syncDays();
+    $('#weekdays', panel).addEventListener('change', () => { daysTouched = true; });
     const showStatus = () => {
       const el = $('#geo-status', panel);
       if (!geo) { el.textContent = '按「搜尋」找到位置後，就能顯示在路線圖上，也會自動帶入營業時間。'; return; }
@@ -709,6 +732,7 @@ function itemForm(t, item) {
           const r = list[b.dataset.k];
           geo = { lat: r.lat, lon: r.lon };
           osmHours = r.hours;
+          syncDays();
           form.place.value = r.name;
           if (!form.title.value.trim()) form.title.value = r.name;
           results.innerHTML = '';
@@ -729,6 +753,7 @@ function itemForm(t, item) {
         cat: v.cat, title: v.title.trim(), date: v.date, time: v.time, place: v.place.trim(),
         cost: v.cost === '' ? '' : Number(v.cost), url: v.url.trim(), note: v.note.trim(),
         geo, osmHours, open: v.open, close: v.close, stay: v.stay === '' ? '' : Number(v.stay),
+        closedDays: daysTouched ? dayBoxes.filter((b) => !b.checked).map((b) => Number(b.value)).sort() : d.closedDays || [],
       });
       if (isNew) t.items.push(it);
       await saveTrip(t);

@@ -103,15 +103,25 @@ function parseHours(raw) {
   return week.some((x) => x) ? week.map((x) => x || []) : null;
 }
 
-// 某個行程在某天的營業時間：[[開, 關], ...]（分鐘），[] = 公休，null = 不知道
-function hoursFor(item, date) {
+// 一個行程一週七天的營業時間：week[星期] = [[開, 關], ...]（分鐘），[] = 公休，null = 不知道
+// 自己填的（開門／關門、公休日）優先，沒填的部分用 OpenStreetMap 的資料
+function weekOf(item) {
+  const osm = parseHours(item.osmHours);
+  const closed = item.closedDays || [];
+  let manual = null;
   if (item.open && item.close) {
     const o = toMin(item.open);
     let c = toMin(item.close);
     if (c <= o) c += 1440;
-    return [[o, c]];
+    manual = [[o, c]];
   }
-  const week = parseHours(item.osmHours);
+  if (!manual && !closed.length) return osm;
+  return [0, 1, 2, 3, 4, 5, 6].map((d) => (closed.includes(d) ? [] : manual || (osm ? osm[d] : null)));
+}
+
+// 某個行程在某天的營業時間；沒有日期（口袋名單）時，只有每天都一樣才回傳
+function hoursFor(item, date) {
+  const week = weekOf(item);
   if (!week) return null;
   if (!date) {
     const same = week.every((d) => JSON.stringify(d) === JSON.stringify(week[0]));
@@ -119,13 +129,19 @@ function hoursFor(item, date) {
   }
   return week[parseDate(date).getDay()];
 }
-const fmtRanges = (ranges) => (ranges.length ? ranges.map(([o, c]) => `${fmtMin(o)}–${c === 1440 ? '24:00' : fmtMin(c)}`).join('、') : '公休');
+const fmtRanges = (ranges) => (!ranges ? '時間未填' : ranges.length ? ranges.map(([o, c]) => `${fmtMin(o)}–${c === 1440 ? '24:00' : fmtMin(c)}`).join('、') : '公休');
 
 // 行程卡片上要顯示的營業時間文字與提醒
 function hoursBadge(item) {
   const h = hoursFor(item, item.date);
-  if (h === null) return item.osmHours ? { text: item.osmHours, warn: '' } : null;
-  if (!h.length) return { text: '公休', warn: '這天公休' };
+  if (h === null) {
+    const week = weekOf(item);
+    if (week && !item.date) return { text: describeWeek(week), warn: '' }; // 口袋名單：顯示整週
+    if (week) return null; // 這天有開但沒填時間
+
+    return item.osmHours ? { text: item.osmHours, warn: '' } : null;
+  }
+  if (!h.length) return { text: '', warn: '這天公休' };
   let warn = '';
   if (item.time) {
     const t = toMin(item.time);
@@ -324,7 +340,9 @@ async function drawMap(el, points, mode, withRoute, onMeta) {
 // 把營業時間整理成好讀的文字，例如「週一至週五 09:00–18:00；週六、週日 10:00–17:00」
 function describeHours(raw) {
   const week = parseHours(raw);
-  if (!week) return raw;
+  return week ? describeWeek(week) : raw;
+}
+function describeWeek(week) {
   const order = [1, 2, 3, 4, 5, 6, 0];
   const name = (d) => '週' + '日一二三四五六'[d];
   const groups = [];
